@@ -3,6 +3,7 @@
 import argparse
 import os
 import sys
+from collections import defaultdict
 from liblearner.file_processor import registry, DEFAULT_IGNORE_DIRS
 from liblearner.processors import PythonProcessor
 
@@ -50,6 +51,9 @@ def main():
     # Register available processors
     registry.register_processor(PythonProcessor)
     
+    # Dictionary to store results by file type
+    results_by_type = defaultdict(list)
+    
     # Process input path
     if os.path.isdir(args.input_path):
         if args.verbose:
@@ -73,18 +77,19 @@ def main():
             output_path = os.path.join(args.output, f"{folder}.csv")
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             
-            # Extract functions from results and write to CSV
-            all_functions = []
+            # Extract functions and group by file type
             for result in folder_results:
-                if result.get('type') == 'python' and 'functions' in result:
-                    all_functions.extend(result['functions'])
-            
-            if all_functions:
-                from liblearner.extractor import write_results_to_csv
-                write_results_to_csv(all_functions, output_path)
-                
-                if args.verbose:
-                    print(f"Results written to: {output_path}")
+                file_type = result.get('type')
+                if file_type and 'functions' in result:
+                    results_by_type[file_type].extend(result['functions'])
+                    
+                    # Write individual folder results
+                    if result['functions']:
+                        from liblearner.python_extractor import write_results_to_csv
+                        write_results_to_csv(result['functions'], output_path)
+                        
+                        if args.verbose:
+                            print(f"Results written to: {output_path}")
     
     else:
         if args.verbose:
@@ -99,19 +104,32 @@ def main():
                 if 'error' in result:
                     log_error(result['path'], result['error'])
             
-            # Write results to CSV if it's a Python file
-            if result.get('type') == 'python' and 'functions' in result:
+            # Write results to CSV if functions were extracted
+            file_type = result.get('type')
+            if file_type and 'functions' in result:
+                results_by_type[file_type].extend(result['functions'])
+                
                 output_path = os.path.join(
                     args.output,
                     f"{os.path.splitext(os.path.basename(args.input_path))[0]}.csv"
                 )
-                from liblearner.extractor import write_results_to_csv
+                from liblearner.python_extractor import write_results_to_csv
                 write_results_to_csv(result['functions'], output_path)
                 
                 if args.verbose:
                     print(f"Results written to: {output_path}")
         else:
             print(f"No processor available for file: {args.input_path}")
+    
+    # Write combined results for each file type
+    for file_type, type_results in results_by_type.items():
+        if type_results:
+            combined_output = os.path.join(args.output, f"all_{file_type}_results.csv")
+            from liblearner.python_extractor import write_results_to_csv
+            write_results_to_csv(type_results, combined_output)
+            
+            if args.verbose:
+                print(f"\nCombined {file_type} results written to: {combined_output}")
 
 if __name__ == "__main__":
     main()
