@@ -28,10 +28,35 @@ LibLearner/
 ├── liblearner/           # Python function extraction library
 │   ├── liblearner/      # Core library code
 │   ├── bin/             # CLI tools
+│   ├── tests/           # Test suite
 │   ├── setup.py         # Package configuration
 │   └── README.md        # Library documentation
 ├── LICENSE              # Project license
 └── README.md           # This file
+```
+
+## Development
+
+### Running Tests
+
+The test suite is located in the `liblearner/tests` directory. To run the tests:
+
+```bash
+cd liblearner
+python -m unittest discover -s tests -v
+```
+
+Alternative test commands:
+
+```bash
+# Run a specific test file
+python -m unittest tests/test_python_processor.py
+
+# Run a specific test class
+python -m unittest tests.test_python_processor.TestPythonProcessor
+
+# Run a specific test method
+python -m unittest tests.test_python_processor.TestPythonProcessor.test_supported_types
 ```
 
 ## Contributing
