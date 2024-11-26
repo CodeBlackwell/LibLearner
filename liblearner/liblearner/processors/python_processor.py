@@ -5,7 +5,7 @@ Handles extraction of information from Python source files.
 
 from typing import List
 from ..file_processor import FileProcessor
-from ..extractor import process_file as process_python_file
+from ..python_extractor import process_file as process_python_file
 
 class PythonProcessor(FileProcessor):
     """Processor for Python source files."""
