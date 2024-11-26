@@ -6,15 +6,25 @@ A collection of tools and libraries for code analysis and learning.
 
 ### Function Extractor (`liblearner`)
 
-A Python library and CLI tool for extracting and analyzing code from various source files. The tool can extract functions, methods, classes, and other code elements from Python and JavaScript files, saving them in a structured format for further analysis.
+A Python library and CLI tool for extracting and analyzing code from various source files. The tool can extract functions, methods, classes, and other code elements from Python, JavaScript, Jupyter notebooks, and Markdown files, saving them in a structured format for further analysis.
 
 ### File Extension Scout (`scout_extensions`)
 
-A command-line tool for analyzing file extensions in a directory tree. Features include:
+A streamlined command-line tool for analyzing file extensions in a directory tree. Features include:
 - Recursive directory traversal
-- Sorting options
+- Frequency-based sorting
 - Configurable directory exclusions
+- Empty extension filtering
 - Cross-platform compatibility
+
+## Processors
+
+### Currently Supported File Types
+
+- **Python** (.py): Functions, classes, methods, and docstrings
+- **JavaScript** (.js): Functions, classes, methods, and JSDoc comments
+- **Jupyter** (.ipynb): Code cells, markdown cells, and outputs
+- **Markdown** (.md): Headers, code blocks, lists, links, tables, and metadata
 
 #### Quick Start
 
@@ -28,7 +38,9 @@ npm install
 
 # Use the CLI tools
 extract_functions path/to/your/code -o output_dir  # Extract code elements
-scout_extensions path/to/directory --sort       # List unique file extensions
+scout_extensions path/to/directory --sort          # List file extensions by frequency
+scout_extensions path/to/directory --no-empty      # Skip files without extensions
+scout_extensions path/to/directory --ignore-dirs node_modules,dist  # Exclude directories
 ```
 
 For more details, see the [liblearner README](liblearner/README.md).
@@ -40,7 +52,8 @@ LibLearner/
 ├── liblearner/           # Code extraction library
 │   ├── liblearner/      # Core library code
 │   │   ├── processors/  # Language-specific processors
-│   │   └── extractors/  # Language-specific extractors
+│   │   ├── extractors/  # Language-specific extractors
+│   │   └── scout/       # File analysis tools
 │   ├── bin/             # CLI tools
 │   ├── tests/           # Test suite
 │   ├── setup.py         # Package configuration
@@ -83,11 +96,14 @@ python -m unittest discover -s tests -v
 Alternative test commands:
 
 ```bash
-# Run Python processor tests
+# Run specific processor tests
 python -m unittest tests/test_python_processor.py
-
-# Run JavaScript processor tests
 python -m unittest tests/test_javascript_processor.py
+python -m unittest tests/test_jupyter_processor.py
+python -m unittest tests/test_markdown_processor.py
+
+# Run scout tools tests
+python -m unittest tests/test_scout_extensions.py
 
 # Run a specific test class
 python -m unittest tests.test_python_processor.TestPythonProcessor

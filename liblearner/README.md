@@ -1,6 +1,6 @@
 # LibLearner
 
-A Python library for extracting and analyzing code from various source files. LibLearner can extract functions, methods, classes, and other code elements from Python and JavaScript files, saving them in a structured format for further analysis.
+A Python library for extracting and analyzing code from various source files. LibLearner can extract functions, methods, classes, and other code elements from Python, JavaScript, Jupyter notebooks, and Markdown files, saving them in a structured format for further analysis.
 
 ## Prerequisites
 
@@ -30,6 +30,7 @@ npm install
 # Process a single file
 process_files path/to/your/file.py -o output_dir
 process_files path/to/your/file.js -o output_dir
+process_files path/to/your/file.md -o output_dir
 
 # Process a directory
 process_files path/to/your/directory -o output_dir
@@ -44,10 +45,10 @@ process_files path/to/your/directory -o output_dir --ignore-dirs tests docs
 #### File Extension Scout
 
 ```bash
-# List all unique extensions in a directory
+# List file extensions with their frequency
 scout_extensions /path/to/directory
 
-# Sort extensions alphabetically
+# Sort extensions by frequency
 scout_extensions /path/to/directory --sort
 
 # Skip files without extensions
@@ -76,6 +77,11 @@ functions = extract_functions(python_code, "example.py")
 from liblearner.processors.javascript_processor import JavaScriptProcessor
 js_processor = JavaScriptProcessor()
 js_result = js_processor.process_file("path/to/file.js")
+
+# Process a Markdown file
+from liblearner.processors.markdown_processor import MarkdownProcessor
+md_processor = MarkdownProcessor()
+md_result = md_processor.process_file("path/to/file.md")
 
 # Process any file (auto-detects type)
 functions = process_file("path/to/file")
@@ -113,6 +119,19 @@ write_results_to_csv(functions, "output.csv")
 - Cell outputs
 - Cell metadata
 
+### Markdown Files (.md)
+- Headers and their hierarchy
+- Code blocks with language information
+- Inline code snippets
+- Lists (ordered and unordered)
+- Links and references
+- Blockquotes
+- Tables
+- Emphasized and strong text
+- YAML frontmatter metadata
+- Table of contents
+- File metadata
+
 ## Output Format
 
 ### Python Output
@@ -144,6 +163,21 @@ The extracted notebook information includes:
 - Outputs: For code cells
 - Metadata: Cell-specific metadata
 
+### Markdown Output
+The extracted Markdown information includes:
+- Headers: List of (level, text) tuples
+- Code Blocks: List of (language, code) tuples
+- Inline Code: List of code snippets
+- Lists: List of list items
+- Links: List of (text, url) tuples
+- Blockquotes: List of quoted text
+- Tables: List of table rows
+- Emphasized Text: List of italic text
+- Strong Text: List of bold text
+- Metadata: Dictionary of YAML frontmatter
+- ToC: List of headers with levels and slugs
+- File Info: Name, path, size, last modified
+
 ## Development
 
 ### Running Tests
@@ -154,14 +188,14 @@ The test suite is located in the `tests` directory and uses Python's built-in un
 # Run all tests with verbose output
 python -m unittest discover -s tests -v
 
-# Run Python processor tests
+# Run specific processor tests
 python -m unittest tests/test_python_processor.py
-
-# Run JavaScript processor tests
 python -m unittest tests/test_javascript_processor.py
-
-# Run Jupyter processor tests
 python -m unittest tests/test_jupyter_processor.py
+python -m unittest tests/test_markdown_processor.py
+
+# Run scout tools tests
+python -m unittest tests/test_scout_extensions.py
 ```
 
 The test suite covers:
@@ -186,6 +220,18 @@ The test suite covers:
   - Markdown cells
   - Raw cells
   - Cell metadata
+- Markdown processing:
+  - Headers and hierarchy
+  - Code blocks and languages
+  - Lists and links
+  - Tables and blockquotes
+  - Text formatting
+  - Metadata extraction
+- File extension analysis:
+  - Directory traversal
+  - Extension counting
+  - Directory exclusion
+  - Empty extension handling
 
 ## Contributing
 
