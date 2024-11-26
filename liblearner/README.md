@@ -132,6 +132,251 @@ write_results_to_csv(functions, "output.csv")
 - Table of contents
 - File metadata
 
+### YAML Files (.yml, .yaml)
+- Document structure
+- Environment variables
+- Service definitions
+- API configurations
+- Database settings
+- Cache configurations
+- URL extraction and validation
+- Dependency version tracking
+- Credential placeholder detection
+- Safe YAML loading
+
+### MDX Files (.mdx)
+- JSX components
+- Module analysis
+- Markdown features
+- Metadata
+
+## 📦 Processors
+
+### YAML Processor
+
+The YAML processor provides comprehensive analysis of YAML files, particularly useful for configuration files, service definitions, and infrastructure specifications.
+
+#### Features
+- **Document Analysis**
+  - Multi-document support
+  - Nested structure parsing
+  - Type inference
+  - Schema detection
+
+- **Configuration Detection**
+  - Environment variables (`${VAR}` and `$VAR` syntax)
+  - Service definitions (Docker, Kubernetes)
+  - API configurations
+  - Database settings
+  - Cache configurations
+
+- **Security & Dependencies**
+  - URL extraction and validation
+  - Dependency version tracking
+  - Credential placeholder detection
+  - Safe YAML loading
+
+#### Usage Example
+```python
+from liblearner.processors import YAMLProcessor
+
+# Initialize processor
+processor = YAMLProcessor()
+
+# Process a YAML file
+result = processor.process_file('docker-compose.yml')
+
+# Access extracted information
+env_vars = result['env_vars']  # List of environment variables
+services = result['services']  # Service configurations
+urls = result['urls']  # List of URLs
+types = result['types']  # Type information
+schemas = result['schemas']  # Schema information
+```
+
+#### Output Format
+```python
+{
+    'documents': [...],  # List of YAML documents
+    'structure': {...},  # Document structure
+    'env_vars': [...],   # Environment variables
+    'urls': [...],       # URLs found
+    'services': {...},   # Service configurations
+    'api_configs': {...},# API configurations
+    'dependencies': {...},# Dependencies
+    'types': {...},      # Type information
+    'schemas': {...},    # Schema information
+    'errors': [...],     # Any parsing errors
+    'file_info': {...}   # File metadata
+}
+```
+
+### Markdown Processor
+
+The Markdown processor extracts various elements from Markdown files, including headers, code blocks, lists, links, and more.
+
+#### Features
+- **Header Analysis**
+  - Header hierarchy
+  - Header text and level
+
+- **Code Blocks**
+  - Code language detection
+  - Code block content
+
+- **Lists and Links**
+  - Ordered and unordered lists
+  - List items
+  - Links and references
+
+- **Tables and Blockquotes**
+  - Table rows and columns
+  - Blockquotes
+
+- **Text Formatting**
+  - Emphasized and strong text
+  - Inline code snippets
+
+- **Metadata**
+  - YAML frontmatter metadata
+  - Table of contents
+  - File metadata
+
+#### Usage Example
+```python
+from liblearner.processors import MarkdownProcessor
+
+# Initialize processor
+processor = MarkdownProcessor()
+
+# Process a Markdown file
+result = processor.process_file('README.md')
+
+# Access extracted information
+headers = result['headers']  # List of headers
+code_blocks = result['code_blocks']  # List of code blocks
+lists = result['lists']  # List of lists
+links = result['links']  # List of links
+tables = result['tables']  # List of tables
+```
+
+#### Output Format
+```python
+{
+    'headers': [...],  # List of headers
+    'code_blocks': [...],  # List of code blocks
+    'lists': [...],  # List of lists
+    'links': [...],  # List of links
+    'tables': [...],  # List of tables
+    'blockquotes': [...],  # List of blockquotes
+    'emphasized_text': [...],  # List of emphasized text
+    'strong_text': [...],  # List of strong text
+    'metadata': {...},  # YAML frontmatter metadata
+    'toc': [...],  # Table of contents
+    'file_info': {...}  # File metadata
+}
+```
+
+### MDX Processor
+
+The MDX processor provides comprehensive analysis of MDX files, combining Markdown processing capabilities with JSX component extraction and module analysis.
+
+#### Features
+- **JSX Components**
+  - Component detection and extraction
+  - Props analysis
+  - Layout components
+  - Component hierarchy
+
+- **Module Analysis**
+  - Import statements
+  - Default and named exports
+  - Component exports
+  - Module dependencies
+
+- **Markdown Features**
+  - Headers and content
+  - Code blocks with language detection
+  - Lists and links
+  - Text formatting
+
+- **Metadata**
+  - YAML frontmatter
+  - Date handling
+  - Layout configuration
+  - Theme settings
+
+#### Usage Example
+```python
+from liblearner.processors import MDXProcessor
+
+# Initialize processor
+processor = MDXProcessor()
+
+# Process an MDX file
+result = processor.process_file('blog-post.mdx')
+
+# Access extracted information
+components = result['components']  # List of JSX components
+exports = result['exports']       # List of exports
+imports = result['imports']       # List of imports
+frontmatter = result['frontmatter']  # Frontmatter data
+layout = result['layout']        # Layout configuration
+```
+
+#### Example MDX File
+```mdx
+---
+title: My Blog Post
+layout: BlogPost
+date: 2023-12-25
+---
+
+import { Button } from '@components/Button'
+import { Card } from '@components/Card'
+
+export const metadata = {
+  title: 'Dynamic Title',
+  description: 'Page description'
+}
+
+<Button variant="primary">Click Me</Button>
+
+<Card>
+  ## Card Title
+  Some content inside a card component
+</Card>
+
+# Main Content
+
+Regular markdown content with **bold** and *italic* text.
+
+export default ({ children }) => <BlogLayout>{children}</BlogLayout>
+```
+
+#### Output Format
+```python
+{
+    'components': ['Button', 'Card', 'BlogLayout'],  # JSX components
+    'exports': ['metadata', 'default'],              # Exported items
+    'imports': ['@components/Button', '@components/Card'], # Imported modules
+    'frontmatter': {                                # Frontmatter data
+        'title': 'My Blog Post',
+        'layout': 'BlogPost',
+        'date': '2023-12-25'
+    },
+    'layout': 'BlogPost',                          # Layout configuration
+    'content': '...',                              # Full MDX content
+    'file_info': {                                 # File metadata
+        'name': 'blog-post.mdx',
+        'path': '/path/to/blog-post.mdx',
+        'size': 1234,
+        'modified': 1703520000
+    },
+    'errors': []                                   # Any parsing errors
+}
+```
+
 ## Output Format
 
 ### Python Output
