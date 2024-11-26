@@ -12,7 +12,10 @@ setup(
     long_description_content_type="text/markdown",
     url="https://github.com/codeblackwell/liblearner",
     packages=find_packages(include=['liblearner', 'liblearner.*']),
-    scripts=['bin/process_files'],  # Removed extract_functions as it's now part of process_files
+    scripts=[
+        'bin/process_files',
+        'bin/scout_extensions'
+    ],
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Developers",

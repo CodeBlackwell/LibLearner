@@ -8,6 +8,14 @@ A collection of tools and libraries for code analysis and learning.
 
 A Python library and CLI tool for extracting and analyzing code from various source files. The tool can extract functions, methods, classes, and other code elements from Python and JavaScript files, saving them in a structured format for further analysis.
 
+### File Extension Scout (`scout_extensions`)
+
+A command-line tool for analyzing file extensions in a directory tree. Features include:
+- Recursive directory traversal
+- Sorting options
+- Configurable directory exclusions
+- Cross-platform compatibility
+
 #### Quick Start
 
 ```bash
@@ -18,8 +26,9 @@ pip install -e .
 # Install Node.js dependencies (required for JavaScript processing)
 npm install
 
-# Use the CLI tool
-extract_functions path/to/your/code -o output_dir
+# Use the CLI tools
+extract_functions path/to/your/code -o output_dir  # Extract code elements
+scout_extensions path/to/directory --sort       # List unique file extensions
 ```
 
 For more details, see the [liblearner README](liblearner/README.md).

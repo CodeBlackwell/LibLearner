@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+
+import os
+import sys
+import argparse
+from pathlib import Path
+from typing import Set, Optional
+
+def get_unique_extensions(directory: str, ignore_dirs: Optional[list] = None) -> Set[str]:
+    """
+    Get unique file extensions from a directory recursively.
+    
+    Args:
+        directory: Path to the directory to scan
+        ignore_dirs: List of directory names to ignore
+        
+    Returns:
+        Set of unique file extensions (without the dot)
+    """
+    if ignore_dirs is None:
+        ignore_dirs = ['.git', '__pycache__', 'node_modules', '.venv', 'venv']
+        
+    extensions = set()
+    
+    for root, dirs, files in os.walk(directory):
+        # Remove ignored directories
+        dirs[:] = [d for d in dirs if d not in ignore_dirs]
+        
+        for file in files:
+            # Get the file extension (without the dot)
+            ext = os.path.splitext(file)[1].lstrip('.')
+            if ext:  # Only add non-empty extensions
+                extensions.add(ext)
+    
+    return extensions
+
+def main():
+    parser = argparse.ArgumentParser(
+        description='Extract unique file extensions from a directory recursively.'
+    )
+    parser.add_argument(
+        'directory',
+        type=str,
+        help='Directory to scan for file extensions'
+    )
+    parser.add_argument(
+        '--ignore-dirs',
+        type=str,
+        nargs='+',
+        help='Directories to ignore (default: .git __pycache__ node_modules .venv venv)'
+    )
+    parser.add_argument(
+        '--sort',
+        action='store_true',
+        help='Sort extensions alphabetically'
+    )
+    parser.add_argument(
+        '--no-empty',
+        action='store_true',
+        help='Skip files without extensions'
+    )
+    
+    args = parser.parse_args()
+    
+    # Convert directory to absolute path
+    directory = os.path.abspath(args.directory)
+    
+    # Verify directory exists
+    if not os.path.isdir(directory):
+        print(f"Error: Directory '{directory}' does not exist", file=sys.stderr)
+        sys.exit(1)
+    
+    try:
+        # Get unique extensions
+        extensions = get_unique_extensions(directory, args.ignore_dirs)
+        
+        # Remove empty extension if requested
+        if args.no_empty:
+            extensions.discard('')
+        
+        # Sort if requested
+        if args.sort:
+            extensions = sorted(extensions)
+        
+        # Print extensions
+        for ext in extensions:
+            print(ext)
+            
+    except Exception as e:
+        print(f"Error: {str(e)}", file=sys.stderr)
+        sys.exit(1)
+
+if __name__ == '__main__':
+    main()

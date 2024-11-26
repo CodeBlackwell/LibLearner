@@ -22,21 +22,42 @@ npm install
 
 ## Usage
 
-### As a Command Line Tool
+### Command Line Tools
+
+#### Code Extraction Tool
 
 ```bash
 # Process a single file
-extract_functions path/to/your/file.py -o output_dir
-extract_functions path/to/your/file.js -o output_dir
+process_files path/to/your/file.py -o output_dir
+process_files path/to/your/file.js -o output_dir
 
 # Process a directory
-extract_functions path/to/your/directory -o output_dir
+process_files path/to/your/directory -o output_dir
 
 # Only extract global functions (Python only)
-extract_functions path/to/your/file.py -o output_dir --globals-only
+process_files path/to/your/file.py -o output_dir --globals-only
 
 # Ignore specific directories
-extract_functions path/to/your/directory -o output_dir --ignore-dirs tests docs
+process_files path/to/your/directory -o output_dir --ignore-dirs tests docs
+```
+
+#### File Extension Scout
+
+```bash
+# List all unique extensions in a directory
+scout_extensions /path/to/directory
+
+# Sort extensions alphabetically
+scout_extensions /path/to/directory --sort
+
+# Skip files without extensions
+scout_extensions /path/to/directory --no-empty
+
+# Ignore specific directories
+scout_extensions /path/to/directory --ignore-dirs build dist node_modules
+
+# Combine options
+scout_extensions /path/to/directory --sort --no-empty --ignore-dirs build dist
 ```
 
 ### As a Library
