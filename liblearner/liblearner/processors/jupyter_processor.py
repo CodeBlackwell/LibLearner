@@ -1,42 +1,74 @@
-import csv
+"""Jupyter notebook processor for LibLearner.
+Handles extraction of information from Jupyter notebook files.
+"""
+
 import nbformat
-from typing import List
+from typing import List, Dict, Any, Union
 from ..file_processor import FileProcessor
 
 class JupyterProcessor(FileProcessor):
+    """Processor for Jupyter notebook files."""
+    
     def get_supported_types(self) -> List[str]:
+        """Return list of supported MIME types."""
         return [
             'application/x-ipynb+json',
             'application/json'
         ]
     
-    def process_file(self, file_path: str) -> str:
+    def process_file(self, file_path: str) -> Dict[str, Any]:
+        """
+        Process a Jupyter notebook file and extract cell information.
+        
+        Args:
+            file_path: Path to the notebook file
+            
+        Returns:
+            Dictionary containing:
+                - type: "jupyter"
+                - path: file path
+                - cells: list of cell information
+                - error: error message if processing failed
+        """
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 nb = nbformat.read(f, as_version=4)
             
-            csv_data = []
+            cells = []
+            for cell in nb.cells:
+                cell_info = {
+                    "cell_type": cell.cell_type,
+                    "source": "".join(cell.source) if isinstance(cell.source, list) else cell.source
+                }
+                
+                # Add execution count for code cells
+                if cell.cell_type == "code":
+                    cell_info["execution_count"] = cell.execution_count
+                    cell_info["outputs"] = cell.outputs
+                
+                # Add metadata if present
+                if hasattr(cell, 'metadata') and cell.metadata:
+                    cell_info["metadata"] = cell.metadata
+                
+                cells.append(cell_info)
             
-            for i, cell in enumerate(nb.cells, start=1):
-                cell_data = [
-                    file_path,
-                    cell.cell_type,
-                    i,
-                    cell.source.replace('\n', '\\n'),
-                    str(cell.outputs).replace('\n', '\\n'), 
-                    cell.execution_count,
-                    str(cell.metadata.get('attachments', {})).replace('\n', '\\n')
-                ]
-                csv_data.append(cell_data)
+            return {
+                "type": "jupyter",
+                "path": file_path,
+                "cells": cells
+            }
             
-            csv_file = f"{file_path}.csv"
-            with open(csv_file, 'w', newline='', encoding='utf-8') as f:
-                writer = csv.writer(f)
-                writer.writerow(['path', 'cell_type', 'cell_number', 'source', 'outputs', 'execution_count', 'metadata'])
-                writer.writerows(csv_data)
-
-            return csv_file
-            
+        except FileNotFoundError as e:
+            return {
+                "type": "jupyter",
+                "path": file_path,
+                "cells": [],
+                "error": f"File not found: {str(e)}"
+            }
         except Exception as e:
-            print(f"Error processing {file_path}: {str(e)}")
-            return None
+            return {
+                "type": "jupyter",
+                "path": file_path,
+                "cells": [],
+                "error": str(e)
+            }

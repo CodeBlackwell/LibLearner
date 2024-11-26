@@ -96,12 +96,22 @@ class ProcessorRegistry:
         """Initialize registry and file type detector."""
         self._processors = {}
         self._detector = FileTypeDetector()
+        self._verbose = False
+    
+    def set_verbose(self, verbose: bool) -> None:
+        """Set verbose mode for debug output."""
+        self._verbose = verbose
+    
+    def _debug(self, message: str) -> None:
+        """Print debug message if verbose mode is enabled."""
+        if self._verbose:
+            print(f"DEBUG: {message}")
     
     def register_processor(self, processor_class: Type[FileProcessor]) -> None:
         """Register a processor for its supported MIME types."""
         processor = processor_class()
         for mime_type in processor.get_supported_types():
-            print(f"DEBUG: Registering processor for MIME type: {mime_type}")
+            self._debug(f"Registering processor for MIME type: {mime_type}")
             self._processors[mime_type] = processor_class
     
     def get_processor(self, file_path: str) -> Optional[FileProcessor]:
@@ -114,11 +124,11 @@ class ProcessorRegistry:
             if ext == '.py':
                 mime_type = 'text/x-python'
             else:
-                print(f"DEBUG: Skipping non-Python text file: {file_path}")
+                self._debug(f"Skipping non-Python text file: {file_path}")
                 return None
         
         processor_class = self._processors.get(mime_type)
-        print(f"DEBUG: Looking for processor for {mime_type}, found: {processor_class is not None}")
+        self._debug(f"Looking for processor for {mime_type}, found: {processor_class is not None}")
         return processor_class() if processor_class else None
     
     def process_file(self, file_path: str) -> Optional[Union[dict, str]]:
@@ -127,10 +137,10 @@ class ProcessorRegistry:
         if processor:
             try:
                 result = processor.process_file(file_path)
-                print(f"DEBUG: Successfully processed {file_path}")
+                self._debug(f"Successfully processed {file_path}")
                 return result
             except Exception as e:
-                print(f"DEBUG: Error processing {file_path}: {str(e)}")
+                self._debug(f"Error processing {file_path}: {str(e)}")
                 return None
         return None
 

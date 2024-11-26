@@ -57,7 +57,8 @@ def main():
     # Create output directory if it doesn't exist
     os.makedirs(args.output, exist_ok=True)
     
-    # Register available processors
+    # Register available processors and set verbose mode
+    registry.set_verbose(args.verbose)
     registry.register_processor(PythonProcessor)
     registry.register_processor(JupyterProcessor)
     

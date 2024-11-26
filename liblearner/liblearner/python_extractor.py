@@ -32,9 +32,15 @@ class FunctionExtractor(ast.NodeVisitor):
         parent_class = self.current_class or "Global"
         parent_function = self.current_function[-1] if self.current_function else None
         entity_name = node.name if entity_type == 'function' else f"lambda_{self.lambda_count}"
+        
+        # Build full name with class prefix if in a class
+        if parent_class != "Global":
+            full_entity_name = f"{parent_class}.{entity_name}"
+        else:
+            full_entity_name = f"{parent_function}.{entity_name}" if parent_function else entity_name
+        
         parameters = [arg.arg for arg in node.args.args]
         docstring = ast.get_docstring(node) or "N/A" if entity_type == 'function' else "N/A"
-        full_entity_name = f"{parent_function}.{entity_name}" if parent_function else entity_name
         entity_code = astunparse.unparse(node)
         self.functions.append((self.filename, parent_class, self.order, full_entity_name, parameters, docstring, entity_code))
 
@@ -72,15 +78,23 @@ def process_file(file_path, error_callback=None, globals_only=False):
         
     Returns:
         list: List of extracted functions
+        
+    Raises:
+        SyntaxError: If the Python code is invalid
+        Exception: For other errors during processing
     """
     try:
         with open(file_path, 'r') as f:
             source_code = f.read()
-        return extract_functions(source_code, file_path, globals_only)
+        tree = ast.parse(source_code)  # Let syntax errors propagate
+        extractor = FunctionExtractor(file_path, globals_only)
+        extractor.source_code = source_code
+        extractor.visit(tree)
+        return extractor.functions
     except Exception as e:
         if error_callback:
             error_callback(file_path, str(e))
-        return []
+        raise  # Re-raise the exception to be handled by the processor
 
 def process_directory(input_directory, ignore_dirs=None, error_callback=None, progress_callback=None, globals_only=False):
     """

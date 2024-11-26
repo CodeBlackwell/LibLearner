@@ -26,16 +26,44 @@ class PythonProcessor(FileProcessor):
                 - error: error message if processing failed
         """
         try:
-            functions = process_python_file(file_path)
+            with open(file_path, 'r') as f:
+                source_code = f.read()
+                if not source_code.strip():
+                    return {
+                        "type": "python",
+                        "path": file_path,
+                        "functions": []
+                    }
+            
+            function_tuples = process_python_file(file_path)
+            functions = []
+            for func_tuple in function_tuples:
+                functions.append({
+                    "file": func_tuple[0],
+                    "class": func_tuple[1],
+                    "order": func_tuple[2],
+                    "name": func_tuple[3],
+                    "parameters": func_tuple[4],
+                    "docstring": func_tuple[5],
+                    "code": func_tuple[6]
+                })
             return {
                 "type": "python",
                 "path": file_path,
                 "functions": functions
             }
+        except SyntaxError as e:
+            return {
+                "type": "python",
+                "path": file_path,
+                "functions": [],
+                "error": f"Syntax error: {str(e)}"
+            }
         except Exception as e:
             return {
                 "type": "python",
                 "path": file_path,
+                "functions": [],
                 "error": str(e)
             }
     
@@ -44,7 +72,6 @@ class PythonProcessor(FileProcessor):
         return [
             "text/x-python",
             "text/x-python-script",
-            "text/plain",  # Added to handle python-magic detection
-            "application/x-python",  # Added for completeness
-            "application/x-python-code"  # Added for completeness
+            "application/x-python",
+            "application/x-python-code"
         ]

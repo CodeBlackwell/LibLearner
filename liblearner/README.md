@@ -60,6 +60,38 @@ The extracted functions are saved in CSV format with the following columns:
 - Docstring: Function docstring if available
 - Code: Complete function source code
 
+## Development
+
+### Running Tests
+
+The test suite is located in the `tests` directory and uses Python's built-in unittest framework. To run the tests:
+
+```bash
+# Run all tests with verbose output
+python -m unittest discover -s tests -v
+
+# Run a specific test file
+python -m unittest tests/test_python_processor.py
+
+# Run a specific test class
+python -m unittest tests.test_python_processor.TestPythonProcessor
+
+# Run a specific test method
+python -m unittest tests.test_python_processor.TestPythonProcessor.test_supported_types
+```
+
+The test suite covers:
+- File type detection (Python, Jupyter, text files)
+- Processor registration and handling
+- Directory processing with ignore patterns
+- Python code processing:
+  - Simple functions
+  - Class methods
+  - Multiple functions
+  - Nested functions
+  - Invalid Python code
+  - Empty files
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
