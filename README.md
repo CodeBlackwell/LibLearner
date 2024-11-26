@@ -6,14 +6,17 @@ A collection of tools and libraries for code analysis and learning.
 
 ### Function Extractor (`liblearner`)
 
-A Python library and CLI tool for extracting and analyzing Python functions from source code. The tool can extract functions, methods, and lambdas from Python files and save them in a structured CSV format for further analysis.
+A Python library and CLI tool for extracting and analyzing code from various source files. The tool can extract functions, methods, classes, and other code elements from Python and JavaScript files, saving them in a structured format for further analysis.
 
 #### Quick Start
 
 ```bash
-# Install the package
+# Install Python package
 cd liblearner
 pip install -e .
+
+# Install Node.js dependencies (required for JavaScript processing)
+npm install
 
 # Use the CLI tool
 extract_functions path/to/your/code -o output_dir
@@ -25,17 +28,39 @@ For more details, see the [liblearner README](liblearner/README.md).
 
 ```
 LibLearner/
-├── liblearner/           # Python function extraction library
+├── liblearner/           # Code extraction library
 │   ├── liblearner/      # Core library code
+│   │   ├── processors/  # Language-specific processors
+│   │   └── extractors/  # Language-specific extractors
 │   ├── bin/             # CLI tools
 │   ├── tests/           # Test suite
 │   ├── setup.py         # Package configuration
+│   ├── package.json     # Node.js dependencies
 │   └── README.md        # Library documentation
 ├── LICENSE              # Project license
 └── README.md           # This file
 ```
 
 ## Development
+
+### Prerequisites
+
+- Python 3.7 or higher
+- Node.js 14 or higher (for JavaScript processing)
+- npm (Node.js package manager)
+
+### Installation
+
+1. Install Python dependencies:
+```bash
+cd liblearner
+pip install -e .
+```
+
+2. Install Node.js dependencies:
+```bash
+npm install
+```
 
 ### Running Tests
 
@@ -49,8 +74,11 @@ python -m unittest discover -s tests -v
 Alternative test commands:
 
 ```bash
-# Run a specific test file
+# Run Python processor tests
 python -m unittest tests/test_python_processor.py
+
+# Run JavaScript processor tests
+python -m unittest tests/test_javascript_processor.py
 
 # Run a specific test class
 python -m unittest tests.test_python_processor.TestPythonProcessor

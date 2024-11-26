@@ -1,11 +1,23 @@
 # LibLearner
 
-A Python library for extracting and analyzing Python functions from source code. LibLearner can extract functions, methods, and lambdas from Python files and save them in a structured CSV format for further analysis.
+A Python library for extracting and analyzing code from various source files. LibLearner can extract functions, methods, classes, and other code elements from Python and JavaScript files, saving them in a structured format for further analysis.
+
+## Prerequisites
+
+- Python 3.7 or higher
+- Node.js 14 or higher (for JavaScript processing)
+- npm (Node.js package manager)
 
 ## Installation
 
+1. Install Python package:
 ```bash
 pip install liblearner
+```
+
+2. Install Node.js dependencies (required for JavaScript processing):
+```bash
+npm install
 ```
 
 ## Usage
@@ -15,11 +27,12 @@ pip install liblearner
 ```bash
 # Process a single file
 extract_functions path/to/your/file.py -o output_dir
+extract_functions path/to/your/file.js -o output_dir
 
 # Process a directory
 extract_functions path/to/your/directory -o output_dir
 
-# Only extract global functions
+# Only extract global functions (Python only)
 extract_functions path/to/your/file.py -o output_dir --globals-only
 
 # Ignore specific directories
@@ -31,15 +44,20 @@ extract_functions path/to/your/directory -o output_dir --ignore-dirs tests docs
 ```python
 from liblearner import extract_functions, process_file, process_directory
 
-# Extract functions from a string of source code
-source_code = '''
+# Extract Python functions from source code
+python_code = '''
 def hello(name):
     return f"Hello, {name}!"
 '''
-functions = extract_functions(source_code, "example.py")
+functions = extract_functions(python_code, "example.py")
 
-# Process a single file
-functions = process_file("path/to/file.py")
+# Process a JavaScript file
+from liblearner.processors.javascript_processor import JavaScriptProcessor
+js_processor = JavaScriptProcessor()
+js_result = js_processor.process_file("path/to/file.js")
+
+# Process any file (auto-detects type)
+functions = process_file("path/to/file")
 
 # Process a directory
 folder_functions = process_directory("path/to/directory")
@@ -49,9 +67,35 @@ from liblearner import write_results_to_csv
 write_results_to_csv(functions, "output.csv")
 ```
 
+## Supported File Types
+
+### Python Files (.py)
+- Functions
+- Methods
+- Classes
+- Lambda functions
+- Nested functions
+- Function docstrings
+
+### JavaScript Files (.js)
+- Functions
+- Methods
+- Classes
+- Arrow functions
+- Nested functions
+- Constants
+- Leading comments
+
+### Jupyter Notebooks (.ipynb)
+- Cell types (code, markdown, raw)
+- Code execution order
+- Cell outputs
+- Cell metadata
+
 ## Output Format
 
-The extracted functions are saved in CSV format with the following columns:
+### Python Output
+The extracted Python functions are saved with the following information:
 - Filename: Source file path
 - Parent: Parent class name or "Global"
 - Order: Order of appearance in the file
@@ -59,6 +103,25 @@ The extracted functions are saved in CSV format with the following columns:
 - Parameters: List of parameter names
 - Docstring: Function docstring if available
 - Code: Complete function source code
+
+### JavaScript Output
+The extracted JavaScript elements include:
+- Type: Element type (Function, Class, Constant)
+- Name: Element name
+- Code: Complete element source code
+- Nesting Level: Depth in the code structure
+- Parent Name: Name of the containing element
+- Parameters: Function parameters (if applicable)
+- Comments: Leading comments
+- Order: Order of appearance
+
+### Jupyter Output
+The extracted notebook information includes:
+- Cell Type: Code, markdown, or raw
+- Source: Cell content
+- Execution Count: For code cells
+- Outputs: For code cells
+- Metadata: Cell-specific metadata
 
 ## Development
 
@@ -70,18 +133,18 @@ The test suite is located in the `tests` directory and uses Python's built-in un
 # Run all tests with verbose output
 python -m unittest discover -s tests -v
 
-# Run a specific test file
+# Run Python processor tests
 python -m unittest tests/test_python_processor.py
 
-# Run a specific test class
-python -m unittest tests.test_python_processor.TestPythonProcessor
+# Run JavaScript processor tests
+python -m unittest tests/test_javascript_processor.py
 
-# Run a specific test method
-python -m unittest tests.test_python_processor.TestPythonProcessor.test_supported_types
+# Run Jupyter processor tests
+python -m unittest tests/test_jupyter_processor.py
 ```
 
 The test suite covers:
-- File type detection (Python, Jupyter, text files)
+- File type detection
 - Processor registration and handling
 - Directory processing with ignore patterns
 - Python code processing:
@@ -89,8 +152,19 @@ The test suite covers:
   - Class methods
   - Multiple functions
   - Nested functions
-  - Invalid Python code
+  - Invalid code
   - Empty files
+- JavaScript code processing:
+  - Functions and methods
+  - Classes
+  - Nested functions
+  - Constants
+  - Invalid code
+- Jupyter notebook processing:
+  - Code cells
+  - Markdown cells
+  - Raw cells
+  - Cell metadata
 
 ## Contributing
 
