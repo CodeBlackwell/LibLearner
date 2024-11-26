@@ -31,5 +31,6 @@ setup(
         "pandas",
         "typing",
         "pathlib",
+        "nbformat>=5.0.0",  # For Jupyter notebook processing
     ],
 )
