@@ -2,3 +2,4 @@ pandas
 astunparse
 typing
 pathlib
+python-magic

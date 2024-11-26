@@ -7,12 +7,12 @@ setup(
     name="liblearner",
     version="0.1.0",
     author="LibLearner Team",
-    description="A library for extracting and analyzing Python functions from source code",
+    description="A library for extracting and analyzing code from various file types",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/liblearner",
-    packages=find_packages(),
-    scripts=['bin/extract_functions'],
+    url="https://github.com/codeblackwell/liblearner",
+    packages=find_packages(include=['liblearner', 'liblearner.*']),
+    scripts=['bin/process_files'],  # Removed extract_functions as it's now part of process_files
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Developers",
@@ -27,5 +27,9 @@ setup(
     python_requires=">=3.6",
     install_requires=[
         "astunparse>=1.6.3",
+        "python-magic>=0.4.27",
+        "pandas",
+        "typing",
+        "pathlib",
     ],
 )

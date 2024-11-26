@@ -1,0 +1,117 @@
+#!/usr/bin/env python3
+
+import argparse
+import os
+import sys
+from liblearner.file_processor import registry, DEFAULT_IGNORE_DIRS
+from liblearner.processors import PythonProcessor
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(
+        description="Process files of different types and extract information."
+    )
+    parser.add_argument(
+        "input_path",
+        help="Path to file or directory to process"
+    )
+    parser.add_argument(
+        "-o", "--output",
+        help="Output directory for results (default: ./output)",
+        default="output"
+    )
+    parser.add_argument(
+        "--ignore-dirs",
+        nargs="*",
+        help=f"Additional directories to ignore (default ignored: {', '.join(sorted(DEFAULT_IGNORE_DIRS))})",
+        default=[]
+    )
+    parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        help="Show detailed processing information"
+    )
+    return parser.parse_args()
+
+def log_error(file_path, error_message):
+    """Log errors to stderr."""
+    print(f"Error processing {file_path}: {error_message}", file=sys.stderr)
+
+def show_progress(file_path, file_type=None):
+    """Display progress information."""
+    type_info = f" ({file_type})" if file_type else ""
+    print(f"Processing {file_path}{type_info}")
+
+def main():
+    args = parse_arguments()
+    
+    # Create output directory if it doesn't exist
+    os.makedirs(args.output, exist_ok=True)
+    
+    # Register available processors
+    registry.register_processor(PythonProcessor)
+    
+    # Process input path
+    if os.path.isdir(args.input_path):
+        if args.verbose:
+            print(f"Processing directory: {args.input_path}")
+            
+        results = registry.process_directory(args.input_path, args.ignore_dirs)
+        
+        # Write results for each folder
+        for folder, folder_results in results.items():
+            if folder == '.':
+                folder = os.path.basename(os.path.abspath(args.input_path))
+            
+            if args.verbose:
+                print(f"\nProcessed folder '{folder}':")
+                for result in folder_results:
+                    show_progress(result['path'], result.get('type'))
+                    if 'error' in result:
+                        log_error(result['path'], result['error'])
+            
+            # Write results to CSV
+            output_path = os.path.join(args.output, f"{folder}.csv")
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            
+            # Extract functions from results and write to CSV
+            all_functions = []
+            for result in folder_results:
+                if result.get('type') == 'python' and 'functions' in result:
+                    all_functions.extend(result['functions'])
+            
+            if all_functions:
+                from liblearner.extractor import write_results_to_csv
+                write_results_to_csv(all_functions, output_path)
+                
+                if args.verbose:
+                    print(f"Results written to: {output_path}")
+    
+    else:
+        if args.verbose:
+            print(f"Processing file: {args.input_path}")
+        
+        # Process single file
+        result = registry.process_file(args.input_path)
+        
+        if result:
+            if args.verbose:
+                show_progress(result['path'], result.get('type'))
+                if 'error' in result:
+                    log_error(result['path'], result['error'])
+            
+            # Write results to CSV if it's a Python file
+            if result.get('type') == 'python' and 'functions' in result:
+                output_path = os.path.join(
+                    args.output,
+                    f"{os.path.splitext(os.path.basename(args.input_path))[0]}.csv"
+                )
+                from liblearner.extractor import write_results_to_csv
+                write_results_to_csv(result['functions'], output_path)
+                
+                if args.verbose:
+                    print(f"Results written to: {output_path}")
+        else:
+            print(f"No processor available for file: {args.input_path}")
+
+if __name__ == "__main__":
+    main()
