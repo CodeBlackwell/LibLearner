@@ -52,7 +52,7 @@ class YAMLProcessor(FileProcessor):
         self.debug = debug
         if self.debug:
             logger.setLevel(logging.DEBUG)
-        self.supported_types = {'text/x-yaml', 'application/x-yaml', 'text/yaml'}
+        self.supported_types = {'text/x-yaml', 'application/x-yaml', 'text/yaml', 'application/yaml'}
         self.env_var_pattern = re.compile(r'\$\{([^}]+)\}|\$([A-Za-z_][A-Za-z0-9_]*)')
         self.url_pattern = re.compile(r'https?://(?:[-\w.]|(?:%[\da-fA-F]{2}))+(?:[^\s.,;]*[^\s.,;:])?')
 

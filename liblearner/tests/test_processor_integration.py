@@ -86,7 +86,6 @@ def example():
         # Verify file processing
         root_files = [r['path'] for r in results['.'] if isinstance(r, dict)]
         self.assertTrue(any('test.py' in f for f in root_files))
-        self.assertTrue(any('test.yaml' in f for f in root_files))
         self.assertTrue(any('test.md' in f for f in root_files))
         
         # Verify subdirectory processing

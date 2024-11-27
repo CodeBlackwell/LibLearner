@@ -201,8 +201,6 @@ class ProcessorRegistry:
             for file_type, file_dict in self._results.items():
                 for filename, df in file_dict.items():
                     df = df.copy()
-                    print(df)
-                    sys.exit()
                     df['file_type'] = file_type
                     df['filename'] = filename
                     all_dfs.append(df)
