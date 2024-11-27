@@ -20,71 +20,63 @@ const argv = yargs(hideBin(process.argv))
 function processFile(filePath) {
   try {
     const code = fs.readFileSync(filePath, 'utf8');
-    const ast = esprima.parseScript(code, { range: true, comment: true });
-    let orderCounter = 0;
+    const ast = esprima.parseScript(code, { 
+      range: true, 
+      comment: true,
+      attachComment: true 
+    });
     const records = [];
     const stack = [];
-    const nestKeyStack = [];
 
     estraverse.traverse(ast, {
       enter: function (node, parent) {
-        if (node.type.includes('Function') || node.type === 'ClassDeclaration' || node.type === 'MethodDefinition' || (node.type === 'VariableDeclaration' && node.kind === 'const') || node.type === 'IfStatement') {
-          orderCounter++;
-          const [start, end] = node.range;
-          const codeSnippet = code.substring(start, end);
-          let elementType = '';
-          let elementName = '';
-          let parameters = [];
-          let comments = [];
-
-          if (node.type === 'MethodDefinition') {
-            elementType = 'Function';
-            elementName = node.key.name;
-            parameters = node.value.params.map(param => param.name);
-          } else if (node.type.includes('Function')) {
-            elementType = 'Function';
-            elementName = node.id ? node.id.name : parent && parent.type === 'VariableDeclarator' ? parent.id.name : `Anonymous${stack.length > 0 ? '.' + stack.map(e => e.name).join('.') : ''}`;
-            parameters = node.params.map(param => param.name);
-          } else if (node.type === 'ClassDeclaration') {
-            elementType = 'Class';
-            elementName = node.id.name;
-          } else if (node.type === 'IfStatement') {
-            elementType = 'Conditional';
-            elementName = 'if';
-          } else {
-            elementType = 'Constant';
-            elementName = node.declarations[0].id.name;
+        if (node.type === 'ClassDeclaration') {
+          stack.push({ type: 'Class', name: node.id.name });
+          const record = {
+            type: 'Class',
+            name: node.id.name,
+            parameters: [],
+            comments: node.leadingComments ? node.leadingComments.map(c => c.value.trim()) : [],
+            code: code.substring(node.range[0], node.range[1]),
+            nestingLevel: stack.length - 1
+          };
+          records.push(record);
+        } else if (node.type === 'MethodDefinition') {
+          const className = stack[stack.length - 1].name;
+          const record = {
+            type: 'Function',
+            name: node.key.name,
+            parentName: `Class:${className}`,
+            parameters: node.value.params.map(param => param.name),
+            comments: (node.leadingComments || node.value.leadingComments || []).map(c => c.value.trim()),
+            code: code.substring(node.range[0], node.range[1]),
+            nestingLevel: stack.length
+          };
+          records.push(record);
+        } else if (node.type.includes('Function') && !parent.type.includes('MethodDefinition')) {
+          const record = {
+            type: 'Function',
+            name: node.id ? node.id.name : 'anonymous',
+            parameters: node.params.map(param => param.name),
+            comments: node.leadingComments ? node.leadingComments.map(c => c.value.trim()) : [],
+            code: code.substring(node.range[0], node.range[1]),
+            nestingLevel: stack.length
+          };
+          if (stack.length > 0) {
+            const parent = stack[stack.length - 1];
+            record.parentName = `${parent.type}:${parent.name}`;
           }
-
-          if (node.leadingComments) {
-            comments = node.leadingComments.map(comment => comment.value.trim());
+          records.push(record);
+          
+          // Push function onto stack for nested functions
+          if (node.id) {
+            stack.push({ type: 'Function', name: node.id.name });
           }
-
-          const nestingLevel = stack.length;
-          const parentName = stack.map(e => `${e.type}:${e.name}`).join(' -> ');
-          const nestKey = nestKeyStack.join('-');
-
-          records.push({
-            order: orderCounter,
-            type: elementType,
-            name: elementName,
-            code: codeSnippet,
-            nestingLevel,
-            parentName,
-            parameters,
-            nestKey,
-            filePath,
-            comments
-          });
-
-          stack.push({ type: elementType, name: elementName });
-          nestKeyStack.push(orderCounter);
         }
       },
       leave: function (node) {
-        if (node.type.includes('Function') || node.type === 'ClassDeclaration' || node.type === 'MethodDefinition' || (node.type === 'VariableDeclaration' && node.kind === 'const') || node.type === 'IfStatement') {
+        if (node.type === 'ClassDeclaration' || (node.type.includes('Function') && node.id)) {
           stack.pop();
-          nestKeyStack.pop();
         }
       }
     });
