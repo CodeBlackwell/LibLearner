@@ -1,0 +1,39 @@
+app:
+  name: TestApp
+  environment: development
+  logging:
+    level: DEBUG
+    handlers:
+      - console
+      - file
+    file_config:
+      path: /var/log/app.log
+      max_size: 10MB
+      backup_count: 5
+
+services:
+  - name: web
+    port: 8080
+    dependencies:
+      - database
+      - cache
+    env_vars:
+      DB_HOST: localhost
+      DB_PORT: 5432
+      CACHE_URL: redis://localhost:6379
+
+  - name: worker
+    queue: high_priority
+    concurrency: 4
+    timeout: 300
+
+data_types:
+  strings:
+    - plain text
+    - "quoted text"
+    - 'single quoted'
+  numbers:
+    integers: [1, 2, 3]
+    floats: [1.1, 2.2, 3.3]
+  boolean: [true, false]
+  null_value: null

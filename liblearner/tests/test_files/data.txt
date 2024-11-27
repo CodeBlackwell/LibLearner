@@ -1,0 +1,17 @@
+This is a sample text file for testing purposes.
+It contains multiple lines of text with different characteristics:
+
+1. Numbers: 123, 45.67, -89.0
+2. Special characters: !@#$%^&*()
+3. URLs: https://example.com, http://test.org
+4. Email addresses: test@example.com
+5. Mixed case text: UPPERCASE, lowercase, CamelCase
+6. Unicode characters: é, ñ, ü, π, λ
+
+Empty line below:
+
+Indented text:
+    This line is indented with spaces
+	This line is indented with a tab
+
+END OF FILE

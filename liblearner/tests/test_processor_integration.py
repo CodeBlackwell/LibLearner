@@ -4,6 +4,9 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+import subprocess
+import sys
+        
 
 from liblearner.file_processor import registry
 from liblearner.processors import (
@@ -137,6 +140,73 @@ def example():
             self.assertIn('filename', df.columns)
             self.assertIn('type', df.columns)
             self.assertIn('content', df.columns)
+            
+    def test_dataframe_csv_output(self):
+        """Test that processor DataFrames are correctly written to CSV files."""
+        import subprocess
+        import sys
+        
+        # Create a temporary directory for test files
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create test files
+            test_yaml = os.path.join(temp_dir, 'sample.yaml')
+            with open(test_yaml, 'w') as f:
+                f.write("""name: test
+version: 1.0
+dependencies:
+  - python>=3.7
+  - pandas""")
+            
+            test_python = os.path.join(temp_dir, 'sample.py')
+            with open(test_python, 'w') as f:
+                f.write("""def sample_function():
+    \"\"\"This is a sample function.\"\"\"
+    return "Hello, World!\"""")
+
+            # Create output directory
+            output_dir = os.path.join(temp_dir, 'output')
+            os.makedirs(output_dir, exist_ok=True)
+
+            # Run process_files script
+            script_path = os.path.join(os.path.dirname(__file__), '..', 'bin', 'process_files')
+            result = subprocess.run([sys.executable, script_path, temp_dir, '-o', output_dir, '-v'],
+                                 capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, f"Script failed with error: {result.stderr}")
+
+            # Verify combined CSV exists and has correct format
+            combined_csv = os.path.join(output_dir, f"{os.path.basename(temp_dir)}_combined.csv")
+            self.assertTrue(os.path.exists(combined_csv), "Combined CSV file not found")
+
+            # Read and verify combined CSV
+            df = pd.read_csv(combined_csv)
+            self.assertGreater(len(df), 0, "Combined CSV is empty")
+            
+            # Required columns from processors
+            required_columns = {'type', 'name', 'content', 'props'}
+            self.assertTrue(required_columns.issubset(df.columns), 
+                          f"Missing required columns. Found: {df.columns}")
+
+            # Verify type-specific CSVs exist
+            yaml_csv = os.path.join(output_dir, f"{os.path.basename(temp_dir)}_text_x_yaml.csv")
+            python_csv = os.path.join(output_dir, f"{os.path.basename(temp_dir)}_text_x_python.csv")
+
+            # At least one type-specific CSV should exist
+            self.assertTrue(os.path.exists(yaml_csv) or os.path.exists(python_csv),
+                          "No type-specific CSV files found")
+
+            # If YAML CSV exists, verify its content
+            if os.path.exists(yaml_csv):
+                yaml_df = pd.read_csv(yaml_csv)
+                self.assertGreater(len(yaml_df), 0, "YAML CSV is empty")
+                self.assertTrue(all(yaml_df['type'] == 'text/x-yaml'),
+                              "YAML CSV contains non-YAML entries")
+
+            # If Python CSV exists, verify its content
+            if os.path.exists(python_csv):
+                python_df = pd.read_csv(python_csv)
+                self.assertGreater(len(python_df), 0, "Python CSV is empty")
+                self.assertTrue(all(python_df['type'] == 'text/x-python'),
+                              "Python CSV contains non-Python entries")
             
 if __name__ == '__main__':
     unittest.main()

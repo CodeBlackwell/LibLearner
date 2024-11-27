@@ -8,6 +8,7 @@ import mimetypes
 import magic  # python-magic library for robust file type detection
 from typing import Optional, Dict, Type, List, Union
 from abc import ABC, abstractmethod
+import sys
 from pathlib import Path
 from collections import defaultdict
 import pandas as pd
@@ -124,12 +125,20 @@ class ProcessorRegistry:
         if self._verbose:
             print(f"DEBUG: {message}")
     
-    def register_processor(self, processor_class: Type[FileProcessor]) -> None:
-        """Register a processor for its supported MIME types."""
-        processor = processor_class()
-        for mime_type in processor.get_supported_types():
+    def register_processor(self, processor: Union[Type[FileProcessor], FileProcessor]) -> None:
+        """Register a processor for its supported MIME types.
+        
+        Args:
+            processor: Either a FileProcessor class or instance
+        """
+        if isinstance(processor, type):
+            processor_instance = processor()
+        else:
+            processor_instance = processor
+            
+        for mime_type in processor_instance.get_supported_types():
             self._debug(f"Registering processor for MIME type: {mime_type}")
-            self._processors[mime_type] = processor_class
+            self._processors[mime_type] = processor_instance
     
     def get_processor(self, file_path: str) -> Optional[FileProcessor]:
         """Get appropriate processor for a file."""
@@ -144,9 +153,9 @@ class ProcessorRegistry:
                 self._debug(f"Skipping non-Python text file: {file_path}")
                 return None
         
-        processor_class = self._processors.get(mime_type)
-        self._debug(f"Looking for processor for {mime_type}, found: {processor_class is not None}")
-        return processor_class() if processor_class else None
+        processor = self._processors.get(mime_type)
+        self._debug(f"Looking for processor for {mime_type}, found: {processor is not None}")
+        return processor
     
     def process_file(self, file_path: str) -> Optional[Union[dict, str]]:
         """Process a single file using appropriate processor."""
@@ -192,6 +201,8 @@ class ProcessorRegistry:
             for file_type, file_dict in self._results.items():
                 for filename, df in file_dict.items():
                     df = df.copy()
+                    print(df)
+                    sys.exit()
                     df['file_type'] = file_type
                     df['filename'] = filename
                     all_dfs.append(df)

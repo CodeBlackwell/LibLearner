@@ -67,7 +67,7 @@ class MarkdownProcessor(FileProcessor):
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
         except Exception as e:
-            self.results_df = pd.DataFrame(columns=['type', 'name', 'content', 'props'])
+            self.results_df = pd.DataFrame(columns=['type', 'name', 'content', 'props', 'filepath'])
             raise RuntimeError(f"Error reading file {file_path}: {str(e)}")
 
         # First, remove code blocks to avoid interference with inline code matching
@@ -99,7 +99,8 @@ class MarkdownProcessor(FileProcessor):
                 'type': 'header',
                 'name': f'h{level}',
                 'content': text,
-                'props': str({'level': level})
+                'props': str({'level': level}),
+                'filepath': file_path
             })
 
         # Add code blocks
@@ -108,7 +109,8 @@ class MarkdownProcessor(FileProcessor):
                 'type': 'code_block',
                 'name': f'code_{idx}',
                 'content': code,
-                'props': str({'language': lang or 'text'})
+                'props': str({'language': lang or 'text'}),
+                'filepath': file_path
             })
 
         # Add inline code
@@ -117,7 +119,8 @@ class MarkdownProcessor(FileProcessor):
                 'type': 'inline_code',
                 'name': f'inline_{idx}',
                 'content': code,
-                'props': str({})
+                'props': str({}),
+                'filepath': file_path
             })
 
         # Add lists
@@ -126,7 +129,8 @@ class MarkdownProcessor(FileProcessor):
                 'type': 'list_item',
                 'name': f'item_{idx}',
                 'content': item,
-                'props': str({})
+                'props': str({}),
+                'filepath': file_path
             })
 
         # Add links
@@ -135,7 +139,8 @@ class MarkdownProcessor(FileProcessor):
                 'type': 'link',
                 'name': text,
                 'content': url,
-                'props': str({})
+                'props': str({}),
+                'filepath': file_path
             })
 
         # Add blockquotes
@@ -144,7 +149,8 @@ class MarkdownProcessor(FileProcessor):
                 'type': 'blockquote',
                 'name': f'quote_{idx}',
                 'content': quote,
-                'props': str({})
+                'props': str({}),
+                'filepath': file_path
             })
 
         # Add tables
@@ -153,7 +159,8 @@ class MarkdownProcessor(FileProcessor):
                 'type': 'table_row',
                 'name': f'row_{idx}',
                 'content': row,
-                'props': str({})
+                'props': str({}),
+                'filepath': file_path
             })
 
         # Add emphasized text
@@ -162,7 +169,8 @@ class MarkdownProcessor(FileProcessor):
                 'type': 'emphasis',
                 'name': f'em_{idx}',
                 'content': text,
-                'props': str({})
+                'props': str({}),
+                'filepath': file_path
             })
 
         # Add strong text
@@ -171,7 +179,8 @@ class MarkdownProcessor(FileProcessor):
                 'type': 'strong',
                 'name': f'strong_{idx}',
                 'content': text,
-                'props': str({})
+                'props': str({}),
+                'filepath': file_path
             })
 
         # Update the results DataFrame

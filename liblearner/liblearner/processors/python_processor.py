@@ -34,7 +34,7 @@ class PythonProcessor(FileProcessor):
             with open(file_path, 'r') as f:
                 source_code = f.read()
                 if not source_code.strip():
-                    self.results_df = pd.DataFrame(columns=['type', 'name', 'content', 'props'])
+                    self.results_df = pd.DataFrame(columns=['type', 'name', 'content', 'props', 'filepath'])
                     return {
                         "type": "python",
                         "path": file_path,
@@ -66,7 +66,8 @@ class PythonProcessor(FileProcessor):
                         'parameters': func_dict['parameters'],
                         'docstring': func_dict['docstring'],
                         'order': func_dict['order']
-                    })
+                    }),
+                    'filepath': file_path  # Add filepath to each row
                 })
             
             # Update the results DataFrame
@@ -78,7 +79,7 @@ class PythonProcessor(FileProcessor):
                 "functions": functions
             }
         except SyntaxError as e:
-            self.results_df = pd.DataFrame(columns=['type', 'name', 'content', 'props'])
+            self.results_df = pd.DataFrame(columns=['type', 'name', 'content', 'props', 'filepath'])
             return {
                 "type": "python",
                 "path": file_path,
@@ -86,7 +87,7 @@ class PythonProcessor(FileProcessor):
                 "error": f"Syntax error: {str(e)}"
             }
         except Exception as e:
-            self.results_df = pd.DataFrame(columns=['type', 'name', 'content', 'props'])
+            self.results_df = pd.DataFrame(columns=['type', 'name', 'content', 'props', 'filepath'])
             return {
                 "type": "python",
                 "path": file_path,

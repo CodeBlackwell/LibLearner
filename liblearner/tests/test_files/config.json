@@ -1,0 +1,27 @@
+{
+    "name": "test-project",
+    "version": "1.0.0",
+    "settings": {
+        "debug": true,
+        "max_retries": 3,
+        "timeout": 30
+    },
+    "database": {
+        "host": "localhost",
+        "port": 5432,
+        "name": "testdb",
+        "credentials": {
+            "user": "test_user",
+            "password": "dummy_password"
+        }
+    },
+    "features": [
+        "logging",
+        "caching",
+        "authentication"
+    ],
+    "endpoints": {
+        "api": "https://api.example.com",
+        "docs": "https://docs.example.com"
+    }
+}

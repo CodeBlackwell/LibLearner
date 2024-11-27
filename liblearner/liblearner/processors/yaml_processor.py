@@ -119,7 +119,7 @@ class YAMLProcessor(FileProcessor):
             for doc in documents:
                 if doc:  # Skip empty documents
                     logger.debug(f"Processing document: {doc}")
-                    self._process_node('', doc, result, results_data)
+                    self._process_node('', doc, result, results_data, file_path)
 
         except (ParserError, ScannerError) as e:
             # Log parsing errors but continue processing
@@ -281,17 +281,17 @@ class YAMLProcessor(FileProcessor):
         elif prefix:  # Only add value if we have a prefix
             current_row[prefix] = str(data) if data is not None else ''
 
-    def _process_node(self, path: str, node: Any, result: YAMLProcessingResult, results_data: List[Dict]) -> None:
+    def _process_node(self, path: str, node: Any, result: YAMLProcessingResult, results_data: List[Dict], file_path: str) -> None:
         """Process a YAML node and extract information."""
         if isinstance(node, dict):
-            self._process_dict(path, node, result, results_data)
+            self._process_dict(path, node, result, results_data, file_path)
             for key, value in node.items():
                 new_path = f"{path}.{key}" if path else key
-                self._process_node(new_path, value, result, results_data)
+                self._process_node(new_path, value, result, results_data, file_path)
         elif isinstance(node, list):
             for i, item in enumerate(node):
                 new_path = f"{path}[{i}]" if path else str(i)
-                self._process_node(new_path, item, result, results_data)
+                self._process_node(new_path, item, result, results_data, file_path)
         else:
             # Extract URLs and env vars from string values
             if isinstance(node, str):
@@ -312,10 +312,11 @@ class YAMLProcessor(FileProcessor):
                     'type': 'scalar',
                     'name': path,
                     'content': str(node),
-                    'props': str({'value_type': type_name})
+                    'props': str({'value_type': type_name}),
+                    'filepath': file_path
                 })
 
-    def _process_dict(self, path: str, node: Dict, result: YAMLProcessingResult, results_data: List[Dict]) -> None:
+    def _process_dict(self, path: str, node: Dict, result: YAMLProcessingResult, results_data: List[Dict], file_path: str) -> None:
         """Process a dictionary node."""
         # Add to structure
         result.structure.append({
@@ -329,7 +330,8 @@ class YAMLProcessor(FileProcessor):
             'type': 'dict',
             'name': path if path else 'root',
             'content': str(node),
-            'props': str({'num_keys': len(node)})
+            'props': str({'num_keys': len(node)}),
+            'filepath': file_path
         })
 
         # Extract API configurations
@@ -338,16 +340,20 @@ class YAMLProcessor(FileProcessor):
 
         # Check for special keys
         if 'services' in node:
-            result.services.update(node['services'].keys())
-        if 'dependencies' in node:
-            result.dependencies.update(node['dependencies'])
+            services = node['services']
+            if isinstance(services, dict):
+                result.services.update(services.keys())
+            elif isinstance(services, list):
+                # For list of services, collect service names if available
+                service_names = [s.get('name', f'service_{i}') for i, s in enumerate(services) if isinstance(s, dict)]
+                result.services.update(service_names)
 
         # Process children
         for key, value in node.items():
             new_path = f"{path}.{key}" if path else key
-            self._process_node(new_path, value, result, results_data)
+            self._process_node(new_path, value, result, results_data, file_path)
 
-    def _process_list(self, path: str, node: List, result: YAMLProcessingResult, results_data: List[Dict]) -> None:
+    def _process_list(self, path: str, node: List, result: YAMLProcessingResult, results_data: List[Dict], file_path: str) -> None:
         """Process a list node."""
         # Add to structure
         result.structure.append({
@@ -361,15 +367,16 @@ class YAMLProcessor(FileProcessor):
             'type': 'sequence',
             'name': path,
             'content': str(len(node)),
-            'props': str({'length': len(node)})
+            'props': str({'length': len(node)}),
+            'filepath': file_path
         })
 
         # Process items
         for i, item in enumerate(node):
             new_path = f"{path}[{i}]" if path else str(i)
-            self._process_node(new_path, item, result, results_data)
+            self._process_node(new_path, item, result, results_data, file_path)
 
-    def _process_string(self, path: str, node: str, result: YAMLProcessingResult, results_data: List[Dict]) -> None:
+    def _process_string(self, path: str, node: str, result: YAMLProcessingResult, results_data: List[Dict], file_path: str) -> None:
         """Process a string node."""
         # Look for environment variables
         env_vars = self.env_var_pattern.findall(node)
@@ -388,5 +395,6 @@ class YAMLProcessor(FileProcessor):
                 'type': 'string',
                 'name': path,
                 'content': node,
-                'props': str({'length': len(node)})
+                'props': str({'length': len(node)}),
+                'filepath': file_path
             })

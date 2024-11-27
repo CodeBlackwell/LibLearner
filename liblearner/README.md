@@ -144,12 +144,6 @@ write_results_to_csv(functions, "output.csv")
 - Credential placeholder detection
 - Safe YAML loading
 
-### MDX Files (.mdx)
-- JSX components
-- Module analysis
-- Markdown features
-- Metadata
-
 ## 📦 Processors
 
 ### YAML Processor
@@ -274,106 +268,6 @@ tables = result['tables']  # List of tables
     'metadata': {...},  # YAML frontmatter metadata
     'toc': [...],  # Table of contents
     'file_info': {...}  # File metadata
-}
-```
-
-### MDX Processor
-
-The MDX processor provides comprehensive analysis of MDX files, combining Markdown processing capabilities with JSX component extraction and module analysis.
-
-#### Features
-- **JSX Components**
-  - Component detection and extraction
-  - Props analysis
-  - Layout components
-  - Component hierarchy
-
-- **Module Analysis**
-  - Import statements
-  - Default and named exports
-  - Component exports
-  - Module dependencies
-
-- **Markdown Features**
-  - Headers and content
-  - Code blocks with language detection
-  - Lists and links
-  - Text formatting
-
-- **Metadata**
-  - YAML frontmatter
-  - Date handling
-  - Layout configuration
-  - Theme settings
-
-#### Usage Example
-```python
-from liblearner.processors import MDXProcessor
-
-# Initialize processor
-processor = MDXProcessor()
-
-# Process an MDX file
-result = processor.process_file('blog-post.mdx')
-
-# Access extracted information
-components = result['components']  # List of JSX components
-exports = result['exports']       # List of exports
-imports = result['imports']       # List of imports
-frontmatter = result['frontmatter']  # Frontmatter data
-layout = result['layout']        # Layout configuration
-```
-
-#### Example MDX File
-```mdx
----
-title: My Blog Post
-layout: BlogPost
-date: 2023-12-25
----
-
-import { Button } from '@components/Button'
-import { Card } from '@components/Card'
-
-export const metadata = {
-  title: 'Dynamic Title',
-  description: 'Page description'
-}
-
-<Button variant="primary">Click Me</Button>
-
-<Card>
-  ## Card Title
-  Some content inside a card component
-</Card>
-
-# Main Content
-
-Regular markdown content with **bold** and *italic* text.
-
-export default ({ children }) => <BlogLayout>{children}</BlogLayout>
-```
-
-#### Output Format
-```python
-{
-    'components': ['Button', 'Card', 'BlogLayout'],  # JSX components
-    'exports': ['metadata', 'default'],              # Exported items
-    'imports': ['@components/Button', '@components/Card'], # Imported modules
-    'frontmatter': {                                # Frontmatter data
-        'title': 'My Blog Post',
-        'layout': 'BlogPost',
-        'date': '2023-12-25'
-    },
-    'layout': 'BlogPost',                          # Layout configuration
-    'content': '...',                              # Full MDX content
-    'file_info': {                                 # File metadata
-        'name': 'blog-post.mdx',
-        'path': '/path/to/blog-post.mdx',
-        'size': 1234,
-        'modified': 1703520000
-    },
-    'errors': []                                   # Any parsing errors
 }
 ```
 
