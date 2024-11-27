@@ -4,6 +4,7 @@ import os
 import tempfile
 import unittest
 from liblearner.processors.markdown_processor import MarkdownProcessor
+import csv
 
 class TestMarkdownProcessor(unittest.TestCase):
     def setUp(self):
@@ -94,6 +95,141 @@ def hello():
         finally:
             # Clean up temporary file
             os.unlink(temp_path)
+
+    def test_csv_output(self):
+        """Test that CSV output format is correct."""
+        # Create a temporary file with test content
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
+            f.write('''# Main Heading
+
+## Section 1
+
+### Code Examples
+
+```python
+def example():
+    return True
+```
+
+```javascript
+function test() {
+    return true;
+}
+```
+
+This is a paragraph with some text.
+
+1. First item
+2. Second item
+   - Nested item
+   - Another nested item
+
+[Example Link](https://example.com)
+''')
+            temp_path = f.name
+
+        try:
+            result = self.processor.process_file(temp_path)
+            csv_path = os.path.join(tempfile.gettempdir(), "output.csv")
+            with open(csv_path, 'w', newline='') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow(['Filename', 'Type', 'Content', 'Level', 'Language', 'Metadata'])
+                
+                # Write headers first
+                for level, text in result.get('headers', []):
+                    writer.writerow([
+                        'test.md',
+                        'header',
+                        text,
+                        str(level),
+                        '',
+                        ''
+                    ])
+                
+                # Then write code blocks
+                for language, code in result.get('code_blocks', []):
+                    writer.writerow([
+                        'test.md',
+                        'code_block',
+                        code,
+                        '',
+                        language,
+                        ''
+                    ])
+                
+                # Then write paragraphs
+                for para in result.get('paragraphs', []):
+                    writer.writerow([
+                        'test.md',
+                        'paragraph',
+                        para,
+                        '',
+                        '',
+                        ''
+                    ])
+                
+                # Finally write lists
+                for item in result.get('lists', []):
+                    writer.writerow([
+                        'test.md',
+                        'list_item',
+                        item,
+                        '',
+                        '',
+                        ''
+                    ])
+
+            # Read and verify the CSV content
+            with open(csv_path, newline='') as csvfile:
+                reader = csv.reader(csvfile)
+                header = next(reader)
+                self.assertEqual(header, ['Filename', 'Type', 'Content', 'Level', 'Language', 'Metadata'])
+                
+                # Verify headers first
+                row = next(reader)
+                self.assertEqual(row[1], 'header')
+                self.assertEqual(row[2], 'Main Heading')
+                self.assertEqual(row[3], '1')
+                
+                row = next(reader)
+                self.assertEqual(row[1], 'header')
+                self.assertEqual(row[2], 'Section 1')
+                self.assertEqual(row[3], '2')
+                
+                row = next(reader)
+                self.assertEqual(row[1], 'header')
+                self.assertEqual(row[2], 'Code Examples')
+                self.assertEqual(row[3], '3')
+                
+                # Then verify code blocks
+                row = next(reader)
+                self.assertEqual(row[1], 'code_block')
+                self.assertEqual(row[2].rstrip(), 'def example():\n    return True')
+                self.assertEqual(row[4], 'python')
+                
+                row = next(reader)
+                self.assertEqual(row[1], 'code_block')
+                self.assertEqual(row[2].rstrip(), 'function test() {\n    return true;\n}')
+                self.assertEqual(row[4], 'javascript')
+                
+                # Then verify paragraphs
+                row = next(reader)
+                self.assertEqual(row[1], 'paragraph')
+                self.assertTrue('This is a paragraph' in row[2])
+                
+                # Finally verify list items
+                row = next(reader)
+                self.assertEqual(row[1], 'list_item')
+                self.assertEqual(row[2], 'First item')
+                
+                row = next(reader)
+                self.assertEqual(row[1], 'list_item')
+                self.assertEqual(row[2], 'Second item')
+
+        finally:
+            # Clean up temporary files
+            os.unlink(temp_path)
+            os.unlink(csv_path)
 
     def test_supported_extensions(self):
         extensions = self.processor.get_supported_extensions()

@@ -1,0 +1,28 @@
+services:
+  web:
+    image: nginx:latest
+    ports:
+      - "${PORT:-80}:80"
+    environment:
+      - DB_HOST=$DATABASE_HOST
+      - API_KEY=${API_KEY}
+
+dependencies:
+  python: ">=3.8"
+  yaml: "^5.1"
+
+api:
+  base_url: https://api.example.com
+  endpoints:
+    - /users
+    - /posts
+
+data_types:
+  string_value: "test"
+  int_value: 42
+  float_value: 3.14
+  bool_value: true
+  null_value: null
+  list_value: [1, 2, 3]
+  dict_value:
+    key: value

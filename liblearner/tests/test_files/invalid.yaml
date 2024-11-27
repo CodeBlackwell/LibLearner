@@ -1,0 +1,6 @@
+invalid:
+  - missing colon
+  unclosed quote: "test
+  bad indentation:
+ wrong:
+      - item

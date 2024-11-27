@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 import shutil
+import csv
 
 from liblearner.processors.python_processor import PythonProcessor
 
@@ -126,5 +127,89 @@ def func2():
         self.assertEqual(result["type"], "python")
         self.assertIn("error", result)
 
+    def test_csv_output(self):
+        """Test that the CSV output is as expected."""
+        test_code = '''
+def test_function():
+    """Test function docstring."""
+    pass
+'''
+        from liblearner.python_extractor import extract_functions, write_results_to_csv
+        
+        functions = extract_functions(test_code, 'test.py')
+        csv_path = os.path.join(self.temp_dir, "output.csv")
+        write_results_to_csv(functions, csv_path)
+
+        with open(csv_path, newline='') as csvfile:
+            reader = csv.reader(csvfile)
+            # Skip header row
+            next(reader)
+            row = next(reader)
+            self.assertEqual(row[0], 'test.py')  # Filename
+            self.assertEqual(row[1], 'Global')   # Parent
+            self.assertEqual(row[2], '1')        # Order
+            self.assertEqual(row[3], 'test_function')  # Function name
+            self.assertEqual(row[4], '[]')       # Parameters
+            self.assertEqual(row[5], 'Test function docstring.')  # Docstring
+
+    def test_csv_output_with_sample_code(self):
+        """Test that the CSV output is as expected with sample code."""
+        sample_code = '''
+class Calculator:
+    def add(self, a, b):
+        return a + b
+
+def global_function(x):
+    return x * 2
+
+square = lambda x: x * x
+'''
+        from liblearner.python_extractor import extract_functions, write_results_to_csv
+        
+        functions = extract_functions(sample_code, 'example.py')
+        csv_path = os.path.join(self.temp_dir, "output.csv")
+        write_results_to_csv(functions, csv_path)
+
+        with open(csv_path, newline='') as csvfile:
+            reader = csv.reader(csvfile)
+            output_content = list(reader)
+            
+            # Verify header
+            self.assertEqual(output_content[0], 
+                ['Filename', 'Parent', 'Order', 'Function/Method Name', 'Parameters', 'Docstring', 'Code'])
+            
+            # Verify Calculator.add method
+            row = output_content[1]
+            self.assertEqual(row[0], 'example.py')
+            self.assertEqual(row[1], 'Calculator')
+            self.assertEqual(row[2], '1')
+            self.assertEqual(row[3], 'Calculator.add')
+            self.assertEqual(row[4], "['self', 'a', 'b']")
+            self.assertEqual(row[5], 'N/A')
+            self.assertIn('def add(self, a, b):', row[6])
+            self.assertIn('return', row[6])
+            
+            # Verify global_function
+            row = output_content[2]
+            self.assertEqual(row[0], 'example.py')
+            self.assertEqual(row[1], 'Global')
+            self.assertEqual(row[2], '2')
+            self.assertEqual(row[3], 'global_function')
+            self.assertEqual(row[4], "['x']")
+            self.assertEqual(row[5], 'N/A')
+            self.assertIn('def global_function(x):', row[6])
+            self.assertIn('return', row[6])
+            
+            # Verify lambda function
+            row = output_content[3]
+            self.assertEqual(row[0], 'example.py')
+            self.assertEqual(row[1], 'Global')
+            self.assertEqual(row[2], '3')
+            self.assertEqual(row[3], 'lambda_0')
+            self.assertEqual(row[4], "['x']")
+            self.assertEqual(row[5], 'N/A')
+            self.assertIn('lambda x:', row[6])
+            self.assertIn('x * x', row[6])
+    
 if __name__ == '__main__':
     unittest.main()
