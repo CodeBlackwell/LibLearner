@@ -71,7 +71,9 @@ class FileTypeDetector:
             '.ipynb': 'application/x-ipynb+json',
             '.txt': 'text/plain',
             '.md': 'text/markdown',
-            '.json': 'application/json'
+            '.json': 'application/json',
+            '.yaml': 'text/x-yaml',
+            '.yml': 'text/x-yaml'
         }
     
     def detect_type(self, file_path: str) -> str:

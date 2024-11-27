@@ -5,7 +5,12 @@ import os
 import sys
 from collections import defaultdict
 from liblearner.file_processor import registry, DEFAULT_IGNORE_DIRS
-from liblearner.processors import PythonProcessor, JupyterProcessor
+from liblearner.processors import (
+    PythonProcessor,
+    JupyterProcessor,
+    YAMLProcessor,
+    MarkdownProcessor
+)
 
 def parse_arguments():
     parser = argparse.ArgumentParser(
@@ -61,6 +66,8 @@ def main():
     registry.set_verbose(args.verbose)
     registry.register_processor(PythonProcessor)
     registry.register_processor(JupyterProcessor)
+    registry.register_processor(YAMLProcessor)
+    registry.register_processor(MarkdownProcessor)
     
     # Process input path
     if os.path.isdir(args.input_path):

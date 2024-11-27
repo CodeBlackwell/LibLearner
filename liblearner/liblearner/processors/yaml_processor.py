@@ -60,7 +60,7 @@ class YAMLProcessor(FileProcessor):
         """Return list of supported MIME types."""
         return list(self.supported_types)
 
-    def process_file(self, file_path: str) -> YAMLProcessingResult:
+    def process_file(self, file_path: str) -> Dict[str, Any]:
         """
         Process a YAML file and extract structured information.
         
@@ -68,17 +68,13 @@ class YAMLProcessor(FileProcessor):
             file_path: Path to the YAML file
             
         Returns:
-            YAMLProcessingResult object containing:
-            - errors: List of any errors encountered
+            Dictionary containing:
+            - type: "yaml"
+            - path: file path
             - documents: List of parsed YAML documents
-            - file_info: Basic file information
-            - structure: Document structure analysis
+            - errors: List of any errors encountered
             - env_vars: Set of environment variables found
             - urls: Set of URLs found
-            - types: Dictionary of data types found
-            - services: Set of service names found
-            - dependencies: Dictionary of dependencies
-            - api_configs: Dictionary of API configurations
         """
         path = Path(file_path)
         result = YAMLProcessingResult()
@@ -88,7 +84,11 @@ class YAMLProcessor(FileProcessor):
             error_msg = f"Error reading file: File not found - {file_path}"
             result.errors.append(error_msg)
             logger.error(error_msg)
-            return result
+            return {
+                "type": "yaml",
+                "path": file_path,
+                "error": error_msg
+            }
 
         try:
             content = path.read_text()
@@ -96,7 +96,11 @@ class YAMLProcessor(FileProcessor):
             error_msg = f"Error reading file: {str(e)}"
             result.errors.append(error_msg)
             logger.error(error_msg)
-            return result
+            return {
+                "type": "yaml",
+                "path": file_path,
+                "error": error_msg
+            }
 
         result.file_info = {
             'name': path.name,
@@ -122,12 +126,23 @@ class YAMLProcessor(FileProcessor):
             error_msg = f"YAML parsing error: {str(e)}"
             result.errors.append(error_msg)
             logger.error(error_msg)
+            return {
+                "type": "yaml",
+                "path": file_path,
+                "error": error_msg
+            }
 
         # Update the results DataFrame
         self.results_df = pd.DataFrame(results_data)
         logger.debug(f"Final extracted URLs: {result.urls}")
 
-        return result
+        return {
+            "type": "yaml",
+            "path": file_path,
+            "documents": result.documents,
+            "env_vars": list(result.env_vars),
+            "urls": list(result.urls)
+        }
 
     def _analyze_structure(self, data: Any) -> Dict:
         """Analyze the structure of a YAML node."""
