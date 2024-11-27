@@ -15,6 +15,7 @@ from liblearner.processors import (
     MarkdownProcessor,
     JupyterProcessor
 )
+from liblearner.processors.yaml_processor import YAMLProcessingResult
 
 class TestProcessorIntegration(unittest.TestCase):
     def setUp(self):
@@ -198,7 +199,7 @@ dependencies:
                 yaml_df = pd.read_csv(yaml_csv)
                 self.assertGreater(len(yaml_df), 0, "YAML CSV is empty")
                 self.assertTrue(all(yaml_df['type'] == 'text/x-yaml'),
-                              "YAML CSV contains non-YAML entries")
+                              f"YAML CSV contains non-YAML entries such as {yaml_df[yaml_df['type'] != 'text/x-yaml']['type'].unique()}")
 
             # If Python CSV exists, verify its content
             if os.path.exists(python_csv):
@@ -218,5 +219,67 @@ dependencies:
                     self.assertTrue(mime_type in ['text/plain', 'text/x-python'],
                                   f"File {file_path} is not a text file: {mime_type}")
             
+    def test_yaml_processing(self):
+        """Test YAML file processing specifically"""
+        print("\n=== Testing YAML Processing ===")
+        
+        # Create a YAML file with known content
+        yaml_content = """
+services:
+  web:
+    image: nginx:latest
+    environment:
+      - API_KEY=${API_KEY}
+    ports:
+      - "8080:80"
+dependencies:
+  - nginx>=1.19.0
+  - python>=3.8
+        """
+        yaml_path = os.path.join(self.test_dir, "test.yaml")
+        with open(yaml_path, "w") as f:
+            f.write(yaml_content)
+        print(f"\nCreated YAML file: {yaml_path}")
+        print(f"Content:\n{yaml_content}")
+            
+        # Process the file directly
+        print("\nProcessing file...")
+        result = registry.process_file(yaml_path)
+        print(f"\nProcessor result:")
+        print(f"  File info: {result.file_info}")
+        print(f"  Documents: {result.documents}")
+        print(f"  Services: {result.services}")
+        print(f"  Environment vars: {result.env_vars}")
+        print(f"  Dependencies: {result.dependencies}")
+        print(f"  URLs: {result.urls}")
+        print(f"  Types: {result.types}")
+        print(f"  Errors: {result.errors}")
+        
+        # Validate result type
+        print("\nValidating result structure...")
+        self.assertIsInstance(result, YAMLProcessingResult, "Result should be a YAMLProcessingResult")
+        self.assertIn('path', result.file_info, "Result should contain file path")
+        self.assertEqual(result.file_info['path'], str(Path(yaml_path).absolute()), "File path should match")
+        
+        # Validate file info
+        print("\nValidating file info...")
+        self.assertGreater(result.file_info.get('size', 0), 0, "File size should be positive")
+        
+        # Validate content extraction
+        print("\nValidating content extraction...")
+        self.assertGreater(len(result.services), 0, "Should extract services")
+        self.assertIn('web', result.services, "Should find web service")
+        
+        self.assertGreater(len(result.env_vars), 0, "Should extract environment variables")
+        self.assertIn('API_KEY', result.env_vars, "Should find API_KEY variable")
+        
+        self.assertGreater(len(result.dependencies), 0, "Should extract dependencies")
+        self.assertIn('nginx', [dep.split('>=')[0] for dep in result.dependencies], "Should find nginx dependency")
+        self.assertIn('python', [dep.split('>=')[0] for dep in result.dependencies], "Should find python dependency")
+        
+        # Validate no errors occurred
+        self.assertEqual(len(result.errors), 0, f"Processing had errors: {result.errors}")
+        print("\nAll validations passed!")
+        
 if __name__ == '__main__':
     unittest.main()

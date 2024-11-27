@@ -12,6 +12,7 @@ This processor extracts structured information from YAML files, including:
 """
 
 import re
+import os
 import logging
 import pandas as pd
 from typing import List, Dict, Any, Set
@@ -275,9 +276,7 @@ class YAMLProcessor(FileProcessor):
                 new_path = f"{path}.{key}" if path else key
                 self._process_node(new_path, value, result, results_data, file_path)
         elif isinstance(node, list):
-            for i, item in enumerate(node):
-                new_path = f"{path}[{i}]" if path else str(i)
-                self._process_node(new_path, item, result, results_data, file_path)
+            self._process_list(path, node, result, results_data, file_path)
         else:
             # Extract URLs and env vars from string values
             if isinstance(node, str):
@@ -295,12 +294,49 @@ class YAMLProcessor(FileProcessor):
                     type_name = type(node).__name__
                 result.types[path] = type_name
                 results_data.append({
-                    'type': 'scalar',
+                    'type': 'text/x-yaml',
                     'name': path,
                     'content': str(node),
                     'props': str({'value_type': type_name}),
                     'filepath': file_path
                 })
+
+    def _process_list(self, path: str, node: List, result: YAMLProcessingResult, results_data: List[Dict], file_path: str) -> None:
+        """Process a list node."""
+        # Add to structure
+        result.structure.append({
+            'type': 'sequence',
+            'path': path,
+            'length': len(node)
+        })
+
+        # Add to results DataFrame
+        results_data.append({
+            'type': 'text/x-yaml',
+            'name': path,
+            'content': str(len(node)),
+            'props': str({'length': len(node)}),
+            'filepath': file_path
+        })
+
+        # Check if this is a dependencies list
+        if path == 'dependencies' or path.endswith('.dependencies'):
+            for dep in node:
+                if isinstance(dep, str):
+                    # Split on >= or > or = to get package name and version
+                    parts = re.split(r'(>=|>|=)', dep, maxsplit=1)
+                    if len(parts) > 1:
+                        pkg_name = parts[0].strip()
+                        version = ''.join(parts[1:]).strip()
+                        result.dependencies[pkg_name] = version
+                    else:
+                        # If no version specified, store as is
+                        result.dependencies[dep] = ''
+
+        # Process items
+        for i, item in enumerate(node):
+            new_path = f"{path}[{i}]" if path else str(i)
+            self._process_node(new_path, item, result, results_data, file_path)
 
     def _process_dict(self, path: str, node: Dict, result: YAMLProcessingResult, results_data: List[Dict], file_path: str) -> None:
         """Process a dictionary node."""
@@ -313,7 +349,7 @@ class YAMLProcessor(FileProcessor):
 
         # Store dictionary info
         results_data.append({
-            'type': 'dict',
+            'type': 'text/x-yaml',
             'name': path if path else 'root',
             'content': str(node),
             'props': str({'num_keys': len(node)}),
@@ -338,34 +374,14 @@ class YAMLProcessor(FileProcessor):
         if path == 'dependencies' or path.endswith('.dependencies'):
             if isinstance(node, dict):
                 result.dependencies.update(node)
+            elif isinstance(node, list):
+                # Move list processing to _process_list method
+                self._process_list(path, node, result, results_data, file_path)
 
         # Process children
         for key, value in node.items():
             new_path = f"{path}.{key}" if path else key
             self._process_node(new_path, value, result, results_data, file_path)
-
-    def _process_list(self, path: str, node: List, result: YAMLProcessingResult, results_data: List[Dict], file_path: str) -> None:
-        """Process a list node."""
-        # Add to structure
-        result.structure.append({
-            'type': 'sequence',
-            'path': path,
-            'length': len(node)
-        })
-
-        # Add to results DataFrame
-        results_data.append({
-            'type': 'sequence',
-            'name': path,
-            'content': str(len(node)),
-            'props': str({'length': len(node)}),
-            'filepath': file_path
-        })
-
-        # Process items
-        for i, item in enumerate(node):
-            new_path = f"{path}[{i}]" if path else str(i)
-            self._process_node(new_path, item, result, results_data, file_path)
 
     def _process_string(self, path: str, node: str, result: YAMLProcessingResult, results_data: List[Dict], file_path: str) -> None:
         """Process a string node."""
@@ -383,7 +399,7 @@ class YAMLProcessor(FileProcessor):
         if path:
             result.types[path] = 'str'
             results_data.append({
-                'type': 'string',
+                'type': 'text/x-yaml',
                 'name': path,
                 'content': node,
                 'props': str({'length': len(node)}),
