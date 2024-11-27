@@ -11,7 +11,8 @@ from liblearner.processors import (
     PythonProcessor,
     JupyterProcessor,
     YAMLProcessor,
-    MarkdownProcessor
+    MarkdownProcessor,
+    JavaScriptProcessor
 )
 
 def parse_arguments():
@@ -100,6 +101,7 @@ def main():
     registry.register_processor(JupyterProcessor())
     registry.register_processor(YAMLProcessor())
     registry.register_processor(MarkdownProcessor())
+    registry.register_processor(JavaScriptProcessor())
     
     # Process input path
     if os.path.isdir(args.input_path):

@@ -48,8 +48,6 @@ class FileTypeDetector:
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"File not found: {file_path}")
 
-        print(f"\nDetecting type for file: {file_path}")
-        
         # Try extension override first
         ext = Path(file_path).suffix.lower()
         if ext in self.extension_overrides:

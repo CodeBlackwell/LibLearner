@@ -1,119 +1,90 @@
-"""JavaScript processor for LibLearner.
-Handles extraction of information from JavaScript files.
-"""
-
 import json
 import subprocess
 import os
 import pandas as pd
-from typing import List, Dict, Any, Union
+from typing import List, Dict, Any
 from ..file_processor import FileProcessor
 
-class JavaScriptProcessor(FileProcessor):
-    """Processor for JavaScript files."""
-    result_data = []
-    
+class JavaScriptProcessingResult:
     def __init__(self):
-        """Initialize the JavaScript processor."""
+        self.errors: List[str] = []
+        self.elements: List[Dict] = []
+        self.file_info: Dict[str, Any] = {}
+        self.env_vars: Set[str] = set()
+        self.urls: Set[str] = set()
+
+class JavaScriptProcessor(FileProcessor):
+    def __init__(self, debug: bool = False):
         super().__init__()
+        self.debug = debug
     
     def get_supported_types(self) -> List[str]:
-        """Return list of supported MIME types."""
         return [
             'application/javascript',
             'text/javascript',
             'application/x-javascript'
         ]
     
-    def process_file(self, file_path: str) -> Dict[str, Any]:
-        """
-        Process a JavaScript file and extract code elements.
+    def process_file(self, file_path: str) -> JavaScriptProcessingResult:
+        result = JavaScriptProcessingResult()
         
-        Args:
-            file_path: Path to the JavaScript file
-            
-        Returns:
-            Dictionary containing:
-                - type: "javascript"
-                - path: file path
-                - elements: list of code elements (functions, classes, etc.)
-                - error: error message if processing failed
-        """
         try:
-            # Get the path to our JavaScript extractor
-            extractor_path = os.path.join(os.path.dirname(__file__), '..', 'javascript_extractor.js')
+            result.file_info = {
+                'name': os.path.basename(file_path),
+                'path': file_path,
+                'size': os.path.getsize(file_path),
+                'type': 'javascript'
+            }
+            
+            # Get the path to the JavaScript extractor script
+            extractor_path = os.path.join(os.path.dirname(__file__), '../javascript_extractor.js')
             
             # Run the JavaScript extractor as a subprocess
-            result = subprocess.run(
+            output = subprocess.check_output(
                 ['node', extractor_path, '--path', file_path],
-                capture_output=True,
-                text=True,
-                check=True
+                universal_newlines=True
             )
             
             # Parse the JSON output
-            elements = json.loads(result.stdout)
+            result.elements = json.loads(output)
             
-            # Create results data for DataFrame
-            results_data = self.result_data
-            for element in elements:
-                element_type = element.get('type', 'unknown')
-                name = element.get('name', '')
-                
-                if element_type == 'FunctionDeclaration':
-                    content = element.get('code', '')
-                    props = {
-                        'parameters': element.get('parameters', []),
-                        'async': element.get('async', False),
-                        'generator': element.get('generator', False)
-                    }
-                elif element_type == 'ClassDeclaration':
-                    content = element.get('code', '')
-                    props = {
-                        'superClass': element.get('superClass', None),
-                        'methods': [m.get('name') for m in element.get('methods', [])]
-                    }
-                else:
-                    content = element.get('code', '')
-                    props = {}
-                
-                results_data.append({
-                    'type': element_type.lower(),
-                    'name': name,
-                    'content': content,
-                    'props': str(props)
+            # Extract environment variables and URLs from elements
+            for element in result.elements:
+                result.env_vars.update(self._extract_env_vars(element['code']))
+                result.urls.update(self._extract_urls(element['code']))
+            
+            # Create DataFrame from result elements
+            self.results_df = pd.DataFrame([{
+                'type': e['type'].lower(),
+                'name': e['name'], 
+                'content': e['code'],
+                'props': json.dumps({
+                    'parameters': e.get('parameters', []),
+                    'comments': e.get('comments', []),
+                    'nestingLevel': e['nestingLevel'],
+                    'parentName': e.get('parentName')
                 })
-            
-            # Update the results DataFrame
-            self.results_df = pd.DataFrame(results_data)
-            
-            return {
-                "type": "javascript",
-                "path": file_path,
-                "elements": elements
-            }
+            } for e in result.elements])
             
         except subprocess.CalledProcessError as e:
-            self.results_df = pd.DataFrame(columns=['type', 'name', 'content', 'props'])
-            return {
-                "type": "javascript",
-                "path": file_path,
-                "elements": [],
-                "error": f"JavaScript extraction failed: {e.stderr}"
-            }
+            result.errors.append(f"JavaScript extraction failed: {e.stderr}")
+            if self.debug:
+                raise e
         except json.JSONDecodeError as e:
-            self.results_df = pd.DataFrame(columns=['type', 'name', 'content', 'props'])
-            return {
-                "type": "javascript",
-                "path": file_path,
-                "elements": [],
-                "error": f"Failed to parse extractor output: {str(e)}"
-            }
+            result.errors.append(f"Failed to parse extractor output: {str(e)}")
+            if self.debug:
+                raise e
         except Exception as e:
-            self.results_df = pd.DataFrame(columns=['type', 'name', 'content', 'props'])
-            return {
-                "type": "javascript",
-                "path": file_path,
-                "elements": [],
-                "error": str(e)
-            }
+            result.errors.append(str(e))
+            if self.debug:
+                raise e
+        
+        return result
+    
+    def _extract_env_vars(self, code: str) -> set[str]:
+        # TODO: Implement environment variable extraction logic
+        return set()
+    
+    def _extract_urls(self, code: str) -> set[str]:
+        # TODO: Implement URL extraction logic
+        return set()

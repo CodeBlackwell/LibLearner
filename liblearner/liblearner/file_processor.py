@@ -74,7 +74,8 @@ class FileTypeDetector:
             '.md': 'text/markdown',
             '.json': 'application/json',
             '.yaml': 'text/x-yaml',
-            '.yml': 'text/x-yaml'
+            '.yml': 'text/x-yaml',
+            '.js': 'application/javascript'
         }
     
     def detect_type(self, file_path: str) -> str:
