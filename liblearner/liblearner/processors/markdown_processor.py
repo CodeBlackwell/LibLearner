@@ -12,11 +12,15 @@ This processor extracts structured information from Markdown files, including:
 """
 
 import re
+import pandas as pd
 from typing import Dict, List, Optional, Tuple
 from pathlib import Path
+from ..file_processor import FileProcessor
 
-class MarkdownProcessor:
+class MarkdownProcessor(FileProcessor):
     def __init__(self):
+        """Initialize the Markdown processor."""
+        super().__init__()
         # Regular expressions for Markdown elements
         self.header_pattern = re.compile(r'^(#{1,6})\s+(.+)$', re.MULTILINE)
         self.code_block_pattern = re.compile(r'```(\w*)\n(.*?)```', re.DOTALL)
@@ -27,6 +31,14 @@ class MarkdownProcessor:
         self.table_pattern = re.compile(r'^\|(.+)\|$', re.MULTILINE)
         self.emphasis_pattern = re.compile(r'(?<!\*)\*(?!\*)([^*]+)\*(?!\*)|(?<!_)_(?!_)([^_]+)_(?!_)')
         self.strong_pattern = re.compile(r'\*\*([^*]+)\*\*|__([^_]+)__')
+
+    def get_supported_types(self) -> List[str]:
+        """Return list of supported MIME types."""
+        return ['text/markdown']
+
+    def get_supported_extensions(self) -> List[str]:
+        """Return list of supported file extensions."""
+        return ['md', 'markdown']
 
     def process_file(self, file_path: str) -> Dict:
         """
@@ -55,6 +67,7 @@ class MarkdownProcessor:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
         except Exception as e:
+            self.results_df = pd.DataFrame(columns=['type', 'name', 'content', 'props'])
             raise RuntimeError(f"Error reading file {file_path}: {str(e)}")
 
         # First, remove code blocks to avoid interference with inline code matching
@@ -65,30 +78,121 @@ class MarkdownProcessor:
 
         content_without_blocks = self.code_block_pattern.sub(store_code_block, content)
 
-        result = {
-            'headers': self._extract_headers(content),
+        # Extract all elements
+        headers = self._extract_headers(content)
+        inline_code = self._extract_inline_code(content_without_blocks)
+        lists = self._extract_lists(content)
+        links = self._extract_links(content)
+        blockquotes = self._extract_blockquotes(content)
+        tables = self._extract_tables(content)
+        emphasized = self._extract_emphasis(content)
+        strong = self._extract_strong(content)
+        metadata = self._extract_metadata(content)
+        toc = self._generate_toc(headers)
+
+        # Create results data for DataFrame
+        results_data = []
+
+        # Add headers
+        for level, text in headers:
+            results_data.append({
+                'type': 'header',
+                'name': f'h{level}',
+                'content': text,
+                'props': str({'level': level})
+            })
+
+        # Add code blocks
+        for idx, (lang, code) in enumerate(code_blocks):
+            results_data.append({
+                'type': 'code_block',
+                'name': f'code_{idx}',
+                'content': code,
+                'props': str({'language': lang or 'text'})
+            })
+
+        # Add inline code
+        for idx, code in enumerate(inline_code):
+            results_data.append({
+                'type': 'inline_code',
+                'name': f'inline_{idx}',
+                'content': code,
+                'props': str({})
+            })
+
+        # Add lists
+        for idx, item in enumerate(lists):
+            results_data.append({
+                'type': 'list_item',
+                'name': f'item_{idx}',
+                'content': item,
+                'props': str({})
+            })
+
+        # Add links
+        for idx, (text, url) in enumerate(links):
+            results_data.append({
+                'type': 'link',
+                'name': text,
+                'content': url,
+                'props': str({})
+            })
+
+        # Add blockquotes
+        for idx, quote in enumerate(blockquotes):
+            results_data.append({
+                'type': 'blockquote',
+                'name': f'quote_{idx}',
+                'content': quote,
+                'props': str({})
+            })
+
+        # Add tables
+        for idx, row in enumerate(tables):
+            results_data.append({
+                'type': 'table_row',
+                'name': f'row_{idx}',
+                'content': row,
+                'props': str({})
+            })
+
+        # Add emphasized text
+        for idx, text in enumerate(emphasized):
+            results_data.append({
+                'type': 'emphasis',
+                'name': f'em_{idx}',
+                'content': text,
+                'props': str({})
+            })
+
+        # Add strong text
+        for idx, text in enumerate(strong):
+            results_data.append({
+                'type': 'strong',
+                'name': f'strong_{idx}',
+                'content': text,
+                'props': str({})
+            })
+
+        # Update the results DataFrame
+        self.results_df = pd.DataFrame(results_data)
+
+        # Return the legacy format for backward compatibility
+        return {
+            'type': 'markdown',
+            'path': file_path,
+            'headers': headers,
             'code_blocks': code_blocks,
-            'inline_code': self._extract_inline_code(content_without_blocks),  # Use content without code blocks
-            'lists': self._extract_lists(content),
-            'links': self._extract_links(content),
-            'blockquotes': self._extract_blockquotes(content),
-            'tables': self._extract_tables(content),
-            'emphasized_text': self._extract_emphasis(content),
-            'strong_text': self._extract_strong(content),
-            'metadata': self._extract_metadata(content),
-            'toc': self._generate_toc(content)
+            'inline_code': inline_code,
+            'lists': lists,
+            'links': links,
+            'blockquotes': blockquotes,
+            'tables': tables,
+            'emphasized_text': emphasized,
+            'strong_text': strong,
+            'metadata': metadata,
+            'toc': toc
         }
-
-        # Add file metadata
-        path = Path(file_path)
-        result['file_info'] = {
-            'name': path.name,
-            'path': str(path.absolute()),
-            'size': path.stat().st_size,
-            'last_modified': path.stat().st_mtime
-        }
-
-        return result
 
     def _extract_headers(self, content: str) -> List[Tuple[int, str]]:
         """Extract headers with their levels."""
@@ -99,51 +203,33 @@ class MarkdownProcessor:
             headers.append((level, text))
         return headers
 
-    def _extract_code_blocks(self, content: str) -> List[Tuple[str, str]]:
-        """Extract code blocks with language information."""
-        code_blocks = []
-        for match in self.code_block_pattern.finditer(content):
-            language = match.group(1) or 'text'  # Default to 'text' if no language specified
-            code = match.group(2).strip()
-            code_blocks.append((language, code))
-        return code_blocks
-
     def _extract_inline_code(self, content: str) -> List[str]:
         """Extract inline code snippets."""
-        return [m.group(1) for m in self.inline_code_pattern.finditer(content)]
+        return [match.group(1) for match in self.inline_code_pattern.finditer(content)]
 
     def _extract_lists(self, content: str) -> List[str]:
-        """Extract list items (both ordered and unordered)."""
-        items = []
-        for match in self.list_pattern.finditer(content):
-            # Group 1 is for unordered lists, group 2 for ordered lists
-            item = match.group(1) or match.group(2)
-            items.append(item.strip())
-        return items
+        """Extract list items."""
+        return [match.group(1) or match.group(2) for match in self.list_pattern.finditer(content)]
 
     def _extract_links(self, content: str) -> List[Tuple[str, str]]:
         """Extract links with their text and URLs."""
-        return [(m.group(1), m.group(2)) for m in self.link_pattern.finditer(content)]
+        return [(match.group(1), match.group(2)) for match in self.link_pattern.finditer(content)]
 
     def _extract_blockquotes(self, content: str) -> List[str]:
-        """Extract blockquoted text."""
-        return [m.group(1).strip() for m in self.blockquote_pattern.finditer(content)]
+        """Extract blockquotes."""
+        return [match.group(1) for match in self.blockquote_pattern.finditer(content)]
 
-    def _extract_tables(self, content: str) -> List[List[str]]:
-        """Extract tables and parse them into rows."""
-        tables = []
-        for match in self.table_pattern.finditer(content):
-            row = [cell.strip() for cell in match.group(1).split('|')]
-            tables.append(row)
-        return tables
+    def _extract_tables(self, content: str) -> List[str]:
+        """Extract table rows."""
+        return [match.group(1).strip() for match in self.table_pattern.finditer(content)]
 
     def _extract_emphasis(self, content: str) -> List[str]:
-        """Extract emphasized text (italic)."""
-        return [m.group(1) or m.group(2) for m in self.emphasis_pattern.finditer(content)]
+        """Extract emphasized text."""
+        return [match.group(1) or match.group(2) for match in self.emphasis_pattern.finditer(content)]
 
     def _extract_strong(self, content: str) -> List[str]:
-        """Extract strong text (bold)."""
-        return [m.group(1) or m.group(2) for m in self.strong_pattern.finditer(content)]
+        """Extract strong text."""
+        return [match.group(1) or match.group(2) for match in self.strong_pattern.finditer(content)]
 
     def _extract_metadata(self, content: str) -> Dict:
         """Extract YAML frontmatter if present."""
@@ -159,9 +245,8 @@ class MarkdownProcessor:
                     metadata[key.strip()] = value.strip()
         return metadata
 
-    def _generate_toc(self, content: str) -> List[Dict]:
+    def _generate_toc(self, headers: List[Tuple[int, str]]) -> List[Dict]:
         """Generate a table of contents from headers."""
-        headers = self._extract_headers(content)
         toc = []
         for level, text in headers:
             # Create a slug for the header (simplified version)
@@ -173,7 +258,3 @@ class MarkdownProcessor:
                 'slug': slug
             })
         return toc
-
-    def get_supported_extensions(self) -> List[str]:
-        """Return list of supported file extensions."""
-        return ['md', 'markdown']

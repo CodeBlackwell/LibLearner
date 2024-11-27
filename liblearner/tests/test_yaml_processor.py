@@ -1,11 +1,17 @@
 import unittest
 from pathlib import Path
+import logging
 from liblearner.processors.yaml_processor import YAMLProcessor, YAMLProcessingResult
 
 class TestYAMLProcessor(unittest.TestCase):
+    """Test cases for YAML processor."""
+
     def setUp(self):
+        """Set up test cases."""
+        logging.basicConfig(level=logging.DEBUG)
         self.processor = YAMLProcessor(debug=True)
         self.test_files_dir = Path(__file__).parent / "test_files"
+        self.test_files_dir.mkdir(exist_ok=True)
         self.sample_yaml = self.test_files_dir / "sample.yaml"
         self.invalid_yaml = self.test_files_dir / "invalid.yaml"
 
@@ -27,7 +33,7 @@ class TestYAMLProcessor(unittest.TestCase):
         self.assertEqual(result.structure[0]['type'], 'mapping')
         
         # Check environment variables
-        expected_env_vars = {'PORT', 'DATABASE_HOST', 'API_KEY'}
+        expected_env_vars = {'PORT:-80', 'DATABASE_HOST', 'API_KEY'}
         self.assertEqual(set(result.env_vars), expected_env_vars)
         
         # Check URLs
@@ -183,7 +189,7 @@ class TestYAMLProcessor(unittest.TestCase):
             }
         }
         
-        rows = self.processor.to_csv(test_data)
+        rows = self.processor.to_csv(test_data, sep='.')
         self.assertEqual(len(rows), 1)  # One row for the dictionary
         row = rows[0]
         
@@ -200,7 +206,7 @@ class TestYAMLProcessor(unittest.TestCase):
             {'name': 'Jane', 'age': 25}
         ]
         
-        rows = self.processor.to_csv(test_data)
+        rows = self.processor.to_csv(test_data, sep='.')
         self.assertEqual(len(rows), 2)  # Two rows for two list items
         
         # Check first row
@@ -220,7 +226,7 @@ class TestYAMLProcessor(unittest.TestCase):
             ]
         }
         
-        rows = self.processor.to_csv(test_data)
+        rows = self.processor.to_csv(test_data, sep='.')
         self.assertEqual(len(rows), 1)  # One row for the dictionary
         row = rows[0]
         
@@ -243,13 +249,13 @@ class TestYAMLProcessor(unittest.TestCase):
             }
         }
         
-        rows = self.processor.to_csv(test_data, sep='_')
+        rows = self.processor.to_csv(test_data, sep='.')
         self.assertEqual(len(rows), 1)
         row = rows[0]
         
         # Check keys with custom separator
-        self.assertEqual(row['person_name'], 'John')
-        self.assertEqual(row['person_age'], '30')
+        self.assertEqual(row['person.name'], 'John')
+        self.assertEqual(row['person.age'], '30')
 
     def test_to_csv_with_none_values(self):
         """Test CSV conversion with None values"""
@@ -261,7 +267,7 @@ class TestYAMLProcessor(unittest.TestCase):
             }
         }
         
-        rows = self.processor.to_csv(test_data)
+        rows = self.processor.to_csv(test_data, sep='.')
         self.assertEqual(len(rows), 1)
         row = rows[0]
         

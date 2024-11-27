@@ -5,11 +5,17 @@ Handles extraction of information from JavaScript files.
 import json
 import subprocess
 import os
+import pandas as pd
 from typing import List, Dict, Any, Union
 from ..file_processor import FileProcessor
 
 class JavaScriptProcessor(FileProcessor):
     """Processor for JavaScript files."""
+    result_data = []
+    
+    def __init__(self):
+        """Initialize the JavaScript processor."""
+        super().__init__()
     
     def get_supported_types(self) -> List[str]:
         """Return list of supported MIME types."""
@@ -48,6 +54,39 @@ class JavaScriptProcessor(FileProcessor):
             # Parse the JSON output
             elements = json.loads(result.stdout)
             
+            # Create results data for DataFrame
+            results_data = self.result_data
+            for element in elements:
+                element_type = element.get('type', 'unknown')
+                name = element.get('name', '')
+                
+                if element_type == 'FunctionDeclaration':
+                    content = element.get('code', '')
+                    props = {
+                        'parameters': element.get('parameters', []),
+                        'async': element.get('async', False),
+                        'generator': element.get('generator', False)
+                    }
+                elif element_type == 'ClassDeclaration':
+                    content = element.get('code', '')
+                    props = {
+                        'superClass': element.get('superClass', None),
+                        'methods': [m.get('name') for m in element.get('methods', [])]
+                    }
+                else:
+                    content = element.get('code', '')
+                    props = {}
+                
+                results_data.append({
+                    'type': element_type.lower(),
+                    'name': name,
+                    'content': content,
+                    'props': str(props)
+                })
+            
+            # Update the results DataFrame
+            self.results_df = pd.DataFrame(results_data)
+            
             return {
                 "type": "javascript",
                 "path": file_path,
@@ -55,6 +94,7 @@ class JavaScriptProcessor(FileProcessor):
             }
             
         except subprocess.CalledProcessError as e:
+            self.results_df = pd.DataFrame(columns=['type', 'name', 'content', 'props'])
             return {
                 "type": "javascript",
                 "path": file_path,
@@ -62,6 +102,7 @@ class JavaScriptProcessor(FileProcessor):
                 "error": f"JavaScript extraction failed: {e.stderr}"
             }
         except json.JSONDecodeError as e:
+            self.results_df = pd.DataFrame(columns=['type', 'name', 'content', 'props'])
             return {
                 "type": "javascript",
                 "path": file_path,
@@ -69,6 +110,7 @@ class JavaScriptProcessor(FileProcessor):
                 "error": f"Failed to parse extractor output: {str(e)}"
             }
         except Exception as e:
+            self.results_df = pd.DataFrame(columns=['type', 'name', 'content', 'props'])
             return {
                 "type": "javascript",
                 "path": file_path,

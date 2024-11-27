@@ -10,12 +10,17 @@ from typing import Optional, Dict, Type, List, Union
 from abc import ABC, abstractmethod
 from pathlib import Path
 from collections import defaultdict
+import pandas as pd
 
 # Default directories to ignore
 DEFAULT_IGNORE_DIRS = {"venv", ".git", "ds_venv", "dw_env", "__pycache__", ".venv", "*.egg-info"}
 
 class FileProcessor(ABC):
     """Base class for file processors."""
+    
+    def __init__(self):
+        """Initialize the processor with an empty dataframe."""
+        self.results_df = pd.DataFrame()
     
     @abstractmethod
     def get_supported_types(self) -> List[str]:
@@ -42,6 +47,15 @@ class FileProcessor(ABC):
             - None if processing failed
         """
         pass
+
+    def get_results_dataframe(self) -> pd.DataFrame:
+        """
+        Get the results dataframe for this processor.
+        
+        Returns:
+            pandas DataFrame containing the processing results
+        """
+        return self.results_df
 
 class FileTypeDetector:
     """Handles file type detection using multiple methods."""
@@ -97,6 +111,7 @@ class ProcessorRegistry:
         self._processors = {}
         self._detector = FileTypeDetector()
         self._verbose = False
+        self._results = defaultdict(lambda: defaultdict(pd.DataFrame))
     
     def set_verbose(self, verbose: bool) -> None:
         """Set verbose mode for debug output."""
@@ -137,12 +152,76 @@ class ProcessorRegistry:
         if processor:
             try:
                 result = processor.process_file(file_path)
+                if result:
+                    # Store the dataframe in the results dictionary
+                    file_type = self._detector.detect_type(file_path)
+                    filename = os.path.basename(file_path)
+                    self._results[file_type][filename] = processor.get_results_dataframe()
                 self._debug(f"Successfully processed {file_path}")
                 return result
             except Exception as e:
                 self._debug(f"Error processing {file_path}: {str(e)}")
                 return None
         return None
+
+    def get_results(self) -> Dict[str, Dict[str, pd.DataFrame]]:
+        """
+        Get all processing results organized by file type and filename.
+        
+        Returns:
+            Dictionary mapping file types to dictionaries of filename -> DataFrame
+        """
+        return dict(self._results)
+
+    def write_results_to_csv(self, output_dir: str, combined: bool = True) -> None:
+        """
+        Write processing results to CSV files.
+        
+        Args:
+            output_dir: Directory to write CSV files to
+            combined: If True, create a single combined CSV for all file types.
+                     If False, create separate CSVs for each file type.
+        """
+        os.makedirs(output_dir, exist_ok=True)
+        
+        if combined:
+            # Combine all dataframes into one
+            all_dfs = []
+            for file_type, file_dict in self._results.items():
+                for filename, df in file_dict.items():
+                    df = df.copy()
+                    df['file_type'] = file_type
+                    df['filename'] = filename
+                    all_dfs.append(df)
+            
+            if all_dfs:
+                combined_df = pd.concat(all_dfs, ignore_index=True)
+                # Reorder columns to put file_type and filename first
+                cols = ['file_type', 'filename', 'type', 'name', 'content', 'props']
+                combined_df = combined_df[cols]
+                output_path = os.path.join(output_dir, 'all_results.csv')
+                combined_df.to_csv(output_path, index=False)
+                self._debug(f"Written combined results to {output_path}")
+        else:
+            # Write separate CSV for each file type
+            for file_type, file_dict in self._results.items():
+                file_dfs = []
+                for filename, df in file_dict.items():
+                    df = df.copy()
+                    df['filename'] = filename
+                    file_dfs.append(df)
+                
+                if file_dfs:
+                    file_type_df = pd.concat(file_dfs, ignore_index=True)
+                    # Reorder columns to put filename first
+                    cols = ['filename', 'type', 'name', 'content', 'props']
+                    file_type_df = file_type_df[cols]
+                    
+                    # Create a safe filename from the MIME type
+                    safe_name = file_type.replace('/', '_').replace('+', '_')
+                    output_path = os.path.join(output_dir, f'{safe_name}_results.csv')
+                    file_type_df.to_csv(output_path, index=False)
+                    self._debug(f"Written {file_type} results to {output_path}")
 
     def process_directory(self, directory_path: str, ignore_dirs: Optional[List[str]] = None) -> Dict[str, List[Union[dict, str]]]:
         """
