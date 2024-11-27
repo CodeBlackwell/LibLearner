@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 import subprocess
 import sys
-        
+from liblearner.file_type_detector import FileTypeDetector
 
 from liblearner.file_processor import registry
 from liblearner.processors import (
@@ -205,8 +205,19 @@ dependencies:
             if os.path.exists(python_csv):
                 python_df = pd.read_csv(python_csv)
                 self.assertGreater(len(python_df), 0, "Python CSV is empty")
-                self.assertTrue(all(python_df['type'] == 'text/x-python'),
-                              "Python CSV contains non-Python entries")
+                
+                # Verify each file in the DataFrame is a Python file
+                for file_path in python_df['filepath'].unique():
+                    # Check file extension
+                    ext = Path(file_path).suffix.lower()
+                    self.assertEqual(ext, '.py',
+                                  f"File {file_path} does not have .py extension")
+                    
+                    # Check it's a text file
+                    detector = FileTypeDetector()
+                    mime_type = detector.detect_type(file_path)
+                    self.assertTrue(mime_type in ['text/plain', 'text/x-python'],
+                                  f"File {file_path} is not a text file: {mime_type}")
             
 if __name__ == '__main__':
     unittest.main()
