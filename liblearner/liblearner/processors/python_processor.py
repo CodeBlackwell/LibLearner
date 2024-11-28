@@ -105,7 +105,15 @@ class PythonProcessor(FileProcessor):
             result.errors.append(error_msg)
             logger.error(error_msg)
 
-        self.results_df = pd.DataFrame(results_data)
+        # Create DataFrame from results data
+        if results_data:
+            self.results_df = pd.DataFrame(results_data)
+            # Add file info to each row
+            self.results_df['filepath'] = str(path.absolute())
+            self.results_df['type'] = 'python'  # Use a consistent type name
+            logger.debug(f"Created DataFrame with {len(results_data)} rows")
+        else:
+            self.results_df = pd.DataFrame()
         return result
 
     def _process_node(self, node: ast.AST, result: PythonProcessingResult, results_data: List[Dict], file_path: str) -> None:

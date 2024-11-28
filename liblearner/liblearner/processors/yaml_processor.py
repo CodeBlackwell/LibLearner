@@ -79,6 +79,7 @@ class YAMLProcessor(FileProcessor):
             - api_configs: Dict of API configurations
             - structure: List of document structure information
         """
+        logger.info(f"Starting to process YAML file: {file_path}")
         path = Path(file_path)
         result = YAMLProcessingResult()
         results_data = []
@@ -91,6 +92,7 @@ class YAMLProcessor(FileProcessor):
 
         try:
             content = path.read_text()
+            logger.debug(f"Read file content, size: {len(content)} bytes")
         except Exception as e:
             error_msg = f"Error reading file: {str(e)}"
             result.errors.append(error_msg)
@@ -103,17 +105,26 @@ class YAMLProcessor(FileProcessor):
             'size': path.stat().st_size,
             'last_modified': path.stat().st_mtime
         }
+        logger.debug(f"File info: {result.file_info}")
 
         try:
             logger.debug("Parsing YAML content")
             documents = list(yaml.safe_load_all(content))
             result.documents = documents
-            logger.debug(f"Found {len(documents)} YAML documents")
+            logger.info(f"Found {len(documents)} YAML documents")
 
-            # Process each document 
-            for doc in documents:
+            # Process each document and convert to CSV format
+            for i, doc in enumerate(documents):
                 if doc:  # Skip empty documents
-                    logger.debug(f"Processing document: {doc}")
+                    logger.debug(f"Processing document {i}: {doc}")
+                    # Convert YAML data to flattened format for CSV
+                    flattened_rows = self.to_csv(doc)
+                    logger.debug(f"Flattened document {i} into {len(flattened_rows)} rows")
+                    for row in flattened_rows:
+                        row.update(result.file_info)  # Add file info to each row
+                        row['type'] = 'text/x-yaml'  # Ensure type is set for CSV output
+                        results_data.append(row)
+                    # Also process for other information
                     self._process_node('', doc, result, results_data, file_path)
 
         except (ParserError, ScannerError) as e:
@@ -127,8 +138,15 @@ class YAMLProcessor(FileProcessor):
             result.errors.append(error_msg)
             logger.error(error_msg)
 
-        # Update the results DataFrame
-        self.results_df = pd.DataFrame(results_data)
+        # Update the results DataFrame with the flattened data
+        if results_data:
+            self.results_df = pd.DataFrame(results_data)
+            logger.info(f"Created DataFrame with {len(results_data)} rows and {len(self.results_df.columns)} columns")
+            logger.debug(f"DataFrame columns: {list(self.results_df.columns)}")
+        else:
+            self.results_df = pd.DataFrame()
+            logger.warning("No data extracted from YAML file")
+        
         return result
 
     def _analyze_structure(self, data: Any) -> Dict:

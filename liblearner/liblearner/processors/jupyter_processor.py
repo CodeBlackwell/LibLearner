@@ -18,8 +18,7 @@ class JupyterProcessor(FileProcessor):
     def get_supported_types(self) -> List[str]:
         """Return list of supported MIME types."""
         return [
-            'application/x-ipynb+json',
-            'application/json'
+            'application/x-ipynb+json'
         ]
     
     def process_file(self, file_path: str) -> Dict[str, Any]:

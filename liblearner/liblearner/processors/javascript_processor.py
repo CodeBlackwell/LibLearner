@@ -4,6 +4,7 @@ import os
 import pandas as pd
 from typing import List, Dict, Any
 from ..file_processor import FileProcessor
+from pathlib import Path
 
 class JavaScriptProcessingResult:
     def __init__(self):
@@ -66,6 +67,10 @@ class JavaScriptProcessor(FileProcessor):
                 })
             } for e in result.elements])
             
+            # Add file info to each row
+            self.results_df['filepath'] = str(Path(file_path).absolute())
+            self.results_df['filetype'] = 'javascript'  # Use a consistent type name
+        
         except subprocess.CalledProcessError as e:
             result.errors.append(f"JavaScript extraction failed: {e.stderr}")
             if self.debug:

@@ -1,23 +1,24 @@
-"""
-Markdown Processor for LibLearner.
-
-This processor extracts structured information from Markdown files, including:
-- Headers and their hierarchy
-- Code blocks with language information
-- Lists (ordered and unordered)
-- Links and references
-- Blockquotes
-- Tables
-- Emphasis and strong text
-"""
-
 import re
 import pandas as pd
-from typing import Dict, List, Optional, Tuple
+from bs4 import BeautifulSoup
+from typing import Dict, List, Optional, Tuple, Union
 from pathlib import Path
 from ..file_processor import FileProcessor
 
 class MarkdownProcessor(FileProcessor):
+    """
+    Markdown Processor for LibLearner.
+
+    This processor extracts structured information from Markdown files, including:
+    - Headers and their hierarchy
+    - Code blocks with language information
+    - Lists (ordered and unordered)
+    - Links and references
+    - Blockquotes
+    - Tables
+    - Emphasis and strong text
+    """
+    
     def __init__(self):
         """Initialize the Markdown processor."""
         super().__init__()
@@ -33,13 +34,14 @@ class MarkdownProcessor(FileProcessor):
         self.strong_pattern = re.compile(r'\*\*([^*]+)\*\*|__([^_]+)__')
 
     def get_supported_types(self) -> List[str]:
-        """Return list of supported MIME types."""
-        return ['text/markdown']
-
-    def get_supported_extensions(self) -> List[str]:
-        """Return list of supported file extensions."""
-        return ['md', 'markdown']
-
+        """
+        Returns the MIME types this processor can handle.
+        
+        Returns:
+            List of supported MIME types (in this case, Markdown and MDX files)
+        """
+        return ['text/markdown', 'text/mdx']
+    
     def process_file(self, file_path: str) -> Dict:
         """
         Process a Markdown file and extract structured information.

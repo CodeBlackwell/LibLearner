@@ -160,20 +160,63 @@ class ProcessorRegistry:
     
     def get_processor(self, file_path: str) -> Optional[FileProcessor]:
         """Get appropriate processor for a file."""
-        mime_type = self._detector.detect_type(file_path)
+        try:
+            mime_type = self._detector.detect_type(file_path)
+            
+            # For text/plain files, check extension first. Many files return text/plain
+            # each extension that potentially does requires a different processor and condition.
+            if mime_type == 'text/plain':
+                ext = Path(file_path).suffix.lower()
+                if ext == '.py':
+                    mime_type = 'text/x-python'
+                elif ext in ['.yaml', '.yml']:
+                    mime_type = 'text/x-yaml'
+                elif ext == '.json':
+                    # Check if it's a Jupyter notebook by looking for nbformat
+                    try:
+                        with open(file_path, 'r') as f:
+                            import json
+                            content = json.load(f)
+                            if 'nbformat' in content:
+                                mime_type = 'application/x-ipynb+json'
+                            else:
+                                mime_type = 'application/json'
+                    except:
+                        mime_type = 'application/json'
+                elif ext in ['.md', '.markdown']:
+                    mime_type = 'text/markdown'
+                elif ext == '.rst':
+                    mime_type = 'text/x-rst'
+                elif ext == '.ini':
+                    mime_type = 'text/x-ini'
+                elif ext == '.toml':
+                    mime_type = 'text/x-toml'
+                elif ext == '.js':
+                    mime_type = 'application/javascript'
+                elif ext == '.ipynb':
+                    mime_type = 'application/x-ipynb+json'
+                else:
+                    self._debug(f"Skipping unsupported text file: {file_path}")
+                    return None
+            elif mime_type == 'application/json':
+                # Check if it's a Jupyter notebook by looking for nbformat
+                try:
+                    with open(file_path, 'r') as f:
+                        import json
+                        content = json.load(f)
+                        if 'nbformat' in content:
+                            mime_type = 'application/x-ipynb+json'
+                except:
+                    pass
+            
+            processor = self._processors.get(mime_type)
+            self._debug(f"Looking for processor for {mime_type}, found: {processor is not None}")
+            return processor
         
-        # For text/plain files, check extension first
-        if mime_type == 'text/plain':
-            ext = Path(file_path).suffix.lower()
-            if ext == '.py':
-                mime_type = 'text/x-python'
-            else:
-                self._debug(f"Skipping non-Python text file: {file_path}")
-                return None
-        
-        processor = self._processors.get(mime_type)
-        self._debug(f"Looking for processor for {mime_type}, found: {processor is not None}")
-        return processor
+        except Exception as e:
+            if self._verbose:
+                raise RuntimeError(f"Error determining processor for file {file_path}: {str(e)}")
+            return None
     
     def process_file(self, file_path: str) -> Optional[Union[dict, str]]:
         """Process a single file using appropriate processor."""
