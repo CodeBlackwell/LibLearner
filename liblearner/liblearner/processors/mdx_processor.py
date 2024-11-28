@@ -41,7 +41,7 @@ class MDXProcessor(FileProcessor):
 
     def get_supported_types(self) -> List[str]:
         """Return list of supported MIME types."""
-        return ['text/markdown']
+        return ['text/mdx', 'text/x-mdx', 'application/x-mdx']
 
     def process_file(self, file_path: str) -> Dict[str, Any]:
         """

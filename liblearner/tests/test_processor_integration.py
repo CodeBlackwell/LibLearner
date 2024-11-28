@@ -196,15 +196,15 @@ This is a README file for the subdirectory.
 
         # Verify file processing
         root_files = [r.file_info['path'] for r in results['.'] if hasattr(r, 'file_info')]
-        print("Root Files:", root_files)
+        print(f"\n\nRoot Files:\n\n {root_files}\n\n")  # Print root_files
         self.assertTrue(any('test.js' in f for f in root_files))
         self.assertTrue(any('test.yaml' in f for f in root_files))
         self.assertTrue(any('test.py' in f for f in root_files))
         # @TODO: Complete registry for the following filetypes
+        self.assertTrue(any('test.ipynb' in f for f in root_files))
 
         self.assertTrue(any('test.md' in f for f in root_files))
         self.assertTrue(any('test.mdx' in f for f in root_files))
-        self.assertTrue(any('test.ipynb' in f for f in root_files))
 
         # Verify subdirectory processing
         subdir_files = [r.file_info['path'] for r in results['subdir'] if hasattr(r, 'file_info')]

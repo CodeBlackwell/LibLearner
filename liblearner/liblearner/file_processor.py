@@ -69,9 +69,11 @@ class FileTypeDetector:
         self._extension_mime_types = {
             '.py': 'text/x-python',
             '.pyi': 'text/x-python',
+            '.pyw': 'text/x-python-executable',
             '.ipynb': 'application/x-ipynb+json',
             '.txt': 'text/plain',
             '.md': 'text/markdown',
+            '.mdx': 'text/mdx',
             '.json': 'application/json',
             '.yaml': 'text/x-yaml',
             '.yml': 'text/x-yaml',
@@ -88,24 +90,39 @@ class FileTypeDetector:
         Returns:
             MIME type string
         """
-        # Get file extension
-        extension = Path(file_path).suffix.lower()
-        
-        # First check our strict extension mappings
-        if extension in self._extension_mime_types:
-            return self._extension_mime_types[extension]
-            
-        # Try magic library
+        if not os.path.exists(file_path) or os.path.isdir(file_path):
+            return ''
+
+        # First try extension mapping for known types
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext in self._extension_mime_types:
+            return self._extension_mime_types[ext]
+
+        # For empty files, use extension mapping or default to text/plain
+        if os.path.getsize(file_path) == 0:
+            if ext == '.py':
+                return 'text/x-python'
+            if ext == '.pyw':
+                return 'text/x-python-executable'
+            if ext == '.md':
+                return 'text/markdown'
+            if ext == '.mdx':
+                return 'text/mdx'
+            if ext == '.js':
+                return 'text/javascript'
+            if ext in ['.yaml', '.yml']:
+                return 'text/x-yaml'
+            if ext == '.ipynb':
+                return 'application/x-ipynb+json'
+            return 'text/plain'
+
+        # Try python-magic for more accurate detection
         try:
-            mime_type = self._magic.from_file(file_path)
-            if mime_type:
-                return mime_type
+            return self._magic.from_file(file_path)
         except Exception as e:
-            print(f"Warning: Magic library failed for {file_path}: {str(e)}")
-        
-        # Fallback to mimetypes library
-        mime_type, _ = mimetypes.guess_type(file_path)
-        return mime_type if mime_type else 'application/octet-stream'
+            # If magic fails, fall back to mimetypes
+            mime_type, _ = mimetypes.guess_type(file_path)
+            return mime_type or 'application/octet-stream'
 
 class ProcessorRegistry:
     """Registry for file processors."""
@@ -160,7 +177,11 @@ class ProcessorRegistry:
     
     def process_file(self, file_path: str) -> Optional[Union[dict, str]]:
         """Process a single file using appropriate processor."""
-        processor = self.get_processor(file_path)
+        try:
+            processor = self.get_processor(file_path)
+        except Exception as e:
+            self._debug(f"Error getting processor for {file_path}: {str(e)}")
+            return None
         if processor:
             try:
                 result = processor.process_file(file_path)

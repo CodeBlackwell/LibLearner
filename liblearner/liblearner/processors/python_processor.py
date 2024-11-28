@@ -41,7 +41,13 @@ class PythonProcessor(FileProcessor):
         self.debug = debug
         if self.debug:
             logger.setLevel(logging.DEBUG)
-        self.supported_types = {'text/x-python', 'text/x-python-script', 'application/x-python', 'application/x-python-code'}
+        self.supported_types = {
+            'text/x-python',
+            'text/x-python-script',
+            'application/x-python',
+            'application/x-python-code',
+            'text/x-python-executable'  # For .pyw files
+        }
 
     def get_supported_types(self) -> List[str]:
         """Return list of supported MIME types."""
@@ -114,48 +120,74 @@ class PythonProcessor(FileProcessor):
     
     def _process_function(self, node: ast.FunctionDef, result: PythonProcessingResult, results_data: List[Dict], file_path: str) -> None:
         """Process a function definition node."""
-        func_info = {
+        function_info = {
             'name': node.name,
-            'lineno': node.lineno,
-            'parameters': [a.arg for a in node.args.args],
             'docstring': ast.get_docstring(node) or '',
-            'code': ast.unparse(node)
+            'type': 'function',
+            'args': [arg.arg for arg in node.args.args],
+            'returns': None,  # We'll add return type hints later
+            'content': ast.unparse(node),
+            'filepath': file_path
         }
-        result.functions.append(func_info)
         
+        result.functions.append(function_info)
         results_data.append({
             'type': 'function',
-            'name': func_info['name'],
-            'content': func_info['code'],
-            'props': str({
-                'lineno': func_info['lineno'],
-                'parameters': func_info['parameters'],
-                'docstring': func_info['docstring']
-            }),
+            'name': node.name,
+            'content': function_info['content'],
+            'props': str({'args': function_info['args'], 'returns': function_info['returns']}),
             'filepath': file_path
         })
+        
+        # Process nested functions
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, ast.FunctionDef):
+                nested_function_info = {
+                    'name': f"{node.name}.{child.name}",
+                    'docstring': ast.get_docstring(child) or '',
+                    'type': 'function',
+                    'args': [arg.arg for arg in child.args.args],
+                    'returns': None,
+                    'content': ast.unparse(child),
+                    'filepath': file_path
+                }
+                result.functions.append(nested_function_info)
+                results_data.append({
+                    'type': 'function',
+                    'name': nested_function_info['name'],
+                    'content': nested_function_info['content'],
+                    'props': str({'args': nested_function_info['args'], 'returns': nested_function_info['returns']}),
+                    'filepath': file_path
+                })
 
     def _process_class(self, node: ast.ClassDef, result: PythonProcessingResult, results_data: List[Dict], file_path: str) -> None:
         """Process a class definition node."""
         class_info = {
             'name': node.name,
-            'lineno': node.lineno,
             'docstring': ast.get_docstring(node) or '',
-            'code': ast.unparse(node)
-        }
-        result.classes.append(class_info)
-        
-        results_data.append({
             'type': 'class',
-            'name': class_info['name'],
-            'content': class_info['code'],
-            'props': str({
-                'lineno': class_info['lineno'],
-                'docstring': class_info['docstring']
-            }),
+            'methods': [],
             'filepath': file_path
-        })
+        }
         
-        # Process methods and nested classes
-        for child in node.body:
-            self._process_node(child, result, results_data, file_path)
+        # Process class methods
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, ast.FunctionDef):
+                method_info = {
+                    'name': child.name,
+                    'docstring': ast.get_docstring(child) or '',
+                    'type': 'method',
+                    'args': [arg.arg for arg in child.args.args],
+                    'returns': None,
+                    'content': ast.unparse(child)
+                }
+                class_info['methods'].append(method_info)
+                results_data.append({
+                    'type': 'method',
+                    'name': f"{node.name}.{child.name}",
+                    'content': method_info['content'],
+                    'props': str({'args': method_info['args'], 'returns': method_info['returns']}),
+                    'filepath': file_path
+                })
+        
+        result.classes.append(class_info)

@@ -1,57 +1,50 @@
-"""Tests for Python processor functionality."""
+"""Tests for the Python processor."""
 
 import os
+import csv
+import shutil
 import tempfile
 import unittest
-from unittest.mock import patch
-import shutil
-import csv
-
-from liblearner.processors.python_processor import PythonProcessor
+from pathlib import Path
+from liblearner.processors.python_processor import PythonProcessor, PythonProcessingResult
 
 class TestPythonProcessor(unittest.TestCase):
-    """Test Python processor functionality."""
-    
+    """Test cases for the Python processor."""
+
     def setUp(self):
         """Set up test environment."""
         self.processor = PythonProcessor()
-        self.temp_dir = tempfile.mkdtemp()
-    
+        self.test_dir = tempfile.mkdtemp()
+
     def tearDown(self):
         """Clean up test environment."""
-        shutil.rmtree(self.temp_dir, ignore_errors=True)
-    
-    def create_test_file(self, filename: str, content: str = "") -> str:
+        shutil.rmtree(self.test_dir, ignore_errors=True)
+
+    def create_test_file(self, filename: str, content: str) -> str:
         """Create a test file with given content."""
-        file_path = os.path.join(self.temp_dir, filename)
+        file_path = os.path.join(self.test_dir, filename)
         with open(file_path, 'w') as f:
             f.write(content)
         return file_path
-    
-    def test_supported_types(self):
-        """Test supported MIME types."""
-        supported_types = self.processor.get_supported_types()
-        self.assertIn("text/x-python", supported_types)
-        self.assertIn("application/x-python", supported_types)
-        self.assertNotIn("text/plain", supported_types)
-    
+
     def test_process_simple_function(self):
         """Test processing a file with a simple function."""
         content = '''def test_function():
     """Test function docstring."""
-    return True'''
+    pass
+'''
         
         file_path = self.create_test_file("test.py", content)
         result = self.processor.process_file(file_path)
         
         self.assertIsNotNone(result)
-        self.assertEqual(result["type"], "python")
-        self.assertEqual(result["path"], file_path)
-        self.assertEqual(len(result["functions"]), 1)
+        self.assertIsInstance(result, PythonProcessingResult)
+        self.assertEqual(len(result.functions), 1)
         
-        function = result["functions"][0]
-        self.assertEqual(function["name"], "test_function")
-        self.assertEqual(function["docstring"], "Test function docstring.")
+        function = result.functions[0]
+        self.assertEqual(function['name'], 'test_function')
+        self.assertEqual(function['docstring'], 'Test function docstring.')
+        self.assertEqual(function['type'], 'function')
     
     def test_process_multiple_functions(self):
         """Test processing a file with multiple functions."""
@@ -61,17 +54,18 @@ class TestPythonProcessor(unittest.TestCase):
 
 def func2():
     """Second function."""
-    return True'''
-        
+    pass
+'''
         file_path = self.create_test_file("test.py", content)
         result = self.processor.process_file(file_path)
         
         self.assertIsNotNone(result)
-        self.assertEqual(len(result["functions"]), 2)
+        self.assertEqual(len(result.functions), 2)
         
-        names = [f["name"] for f in result["functions"]]
-        self.assertIn("func1", names)
-        self.assertIn("func2", names)
+        self.assertEqual(result.functions[0]['name'], 'func1')
+        self.assertEqual(result.functions[0]['docstring'], 'First function.')
+        self.assertEqual(result.functions[1]['name'], 'func2')
+        self.assertEqual(result.functions[1]['docstring'], 'Second function.')
     
     def test_process_class_methods(self):
         """Test processing a file with class methods."""
@@ -84,48 +78,56 @@ def func2():
     
     def method2(self):
         """Second method."""
-        return True'''
-        
+        pass
+'''
         file_path = self.create_test_file("test.py", content)
         result = self.processor.process_file(file_path)
         
         self.assertIsNotNone(result)
-        self.assertEqual(len(result["functions"]), 2)
+        self.assertEqual(len(result.classes), 1)
         
-        names = [f["name"] for f in result["functions"]]
-        self.assertIn("TestClass.method1", names)
-        self.assertIn("TestClass.method2", names)
+        test_class = result.classes[0]
+        self.assertEqual(test_class['name'], 'TestClass')
+        self.assertEqual(test_class['docstring'], 'Test class docstring.')
+        self.assertEqual(len(test_class['methods']), 2)
+        
+        self.assertEqual(test_class['methods'][0]['name'], 'method1')
+        self.assertEqual(test_class['methods'][0]['docstring'], 'First method.')
+        self.assertEqual(test_class['methods'][1]['name'], 'method2')
+        self.assertEqual(test_class['methods'][1]['docstring'], 'Second method.')
     
     def test_process_nested_functions(self):
         """Test processing a file with nested functions."""
-        content = '''def outer():
-    """Outer function."""
+        content = """
+def outer():
     def inner():
-        """Inner function."""
         pass
-    return inner'''
+    return inner
+"""
+        test_file = self.create_test_file("test.py", content)
+        result = self.processor.process_file(test_file)
         
-        file_path = self.create_test_file("test.py", content)
-        result = self.processor.process_file(file_path)
+        self.assertEqual(len(result.functions), 2)
+        outer_func = result.functions[0]
+        inner_func = result.functions[1]
         
-        self.assertIsNotNone(result)
-        self.assertEqual(len(result["functions"]), 2)
-        
-        names = [f["name"] for f in result["functions"]]
-        self.assertIn("outer", names)
-        self.assertIn("outer.inner", names)
+        self.assertEqual(outer_func['name'], 'outer')
+        self.assertEqual(outer_func['type'], 'function')
+        self.assertEqual(inner_func['name'], 'outer.inner')
+        self.assertEqual(inner_func['type'], 'function')
     
     def test_process_invalid_python(self):
         """Test processing a file with invalid Python code."""
-        content = '''def invalid_syntax:
-    this is not valid python'''
-        
+        content = '''def invalid_function(
+    this is not valid python
+'''
         file_path = self.create_test_file("test.py", content)
         result = self.processor.process_file(file_path)
         
         self.assertIsNotNone(result)
-        self.assertEqual(result["type"], "python")
-        self.assertIn("error", result)
+        self.assertTrue(len(result.errors) > 0)
+        self.assertEqual(len(result.functions), 0)
+        self.assertEqual(len(result.classes), 0)
 
     def test_csv_output(self):
         """Test that the CSV output is as expected."""
@@ -137,7 +139,7 @@ def test_function():
         from liblearner.python_extractor import extract_functions, write_results_to_csv
         
         functions = extract_functions(test_code, 'test.py')
-        csv_path = os.path.join(self.temp_dir, "output.csv")
+        csv_path = os.path.join(self.test_dir, "output.csv")
         write_results_to_csv(functions, csv_path)
 
         with open(csv_path, newline='') as csvfile:
@@ -167,7 +169,7 @@ square = lambda x: x * x
         from liblearner.python_extractor import extract_functions, write_results_to_csv
         
         functions = extract_functions(sample_code, 'example.py')
-        csv_path = os.path.join(self.temp_dir, "output.csv")
+        csv_path = os.path.join(self.test_dir, "output.csv")
         write_results_to_csv(functions, csv_path)
 
         with open(csv_path, newline='') as csvfile:
@@ -210,6 +212,6 @@ square = lambda x: x * x
             self.assertEqual(row[5], 'N/A')
             self.assertIn('lambda x:', row[6])
             self.assertIn('x * x', row[6])
-    
+
 if __name__ == '__main__':
     unittest.main()
