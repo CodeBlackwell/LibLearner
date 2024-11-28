@@ -12,7 +12,8 @@ from liblearner.processors import (
     JupyterProcessor,
     YAMLProcessor,
     MarkdownProcessor,
-    JavaScriptProcessor
+    JavaScriptProcessor,
+    JSONProcessor
 )
 
 def parse_arguments():
@@ -63,7 +64,24 @@ def get_file_extension(file_path):
 
 def get_type_name(mime_type: str) -> str:
     """Convert MIME type to a safe filename component."""
-    return mime_type.replace('/', '_').replace('-', '_')
+    # Map common MIME types to simpler names
+    type_map = {
+        'text/x-python': 'python',
+        'text/x-yaml': 'yaml',
+        'application/x-yaml': 'yaml',
+        'text/yaml': 'yaml',
+        'application/yaml': 'yaml',
+        'text/markdown': 'markdown',
+        'text/javascript': 'javascript',
+        'application/javascript': 'javascript',
+        'text/x-shellscript': 'shell',
+        'application/x-ipynb+json': 'notebook'
+    }
+    if mime_type in type_map:
+        return type_map[mime_type]
+    
+    # For other types, convert to safe filename
+    return mime_type.replace('/', '_').replace('+', '_').replace('-', '_')
 
 def write_dataframes_to_csv(dataframes, output_dir, base_name="results"):
     """Write DataFrames to CSV files, both combined and separate.
@@ -85,7 +103,10 @@ def write_dataframes_to_csv(dataframes, output_dir, base_name="results"):
         if not df.empty:
             type_name = get_type_name(proc_type)
             type_path = os.path.join(output_dir, f"{base_name}_{type_name}.csv")
-            df.to_csv(type_path, index=False)
+            # Add type column to identify source in separate files
+            df_with_type = df.copy()
+            df_with_type['processor_type'] = proc_type
+            df_with_type.to_csv(type_path, index=False)
     
     return combined_path
 
@@ -102,6 +123,7 @@ def main():
     registry.register_processor(YAMLProcessor())
     registry.register_processor(MarkdownProcessor())
     registry.register_processor(JavaScriptProcessor())
+    registry.register_processor(JSONProcessor())
     
     # Process input path
     if os.path.isdir(args.input_path):
@@ -110,31 +132,34 @@ def main():
             
         results = registry.process_directory(args.input_path, args.ignore_dirs)
         
-        # Process results by folder
-        for folder, folder_results in results.items():
-            if folder == '.':
-                folder = os.path.basename(os.path.abspath(args.input_path))
-            
+        # Collect all DataFrames from processors
+        processor_dfs = defaultdict(list)
+        for processor in registry._processors.values():
+            if not processor.results_df.empty:
+                proc_type = processor.get_supported_types()[0]  # Use first type as identifier
+                processor_dfs[proc_type].append(processor.results_df)
+        
+        # Combine DataFrames for each processor type
+        combined_dfs = {}
+        for proc_type, dfs in processor_dfs.items():
+            if dfs:
+                combined_dfs[proc_type] = pd.concat(dfs, ignore_index=True)
+        
+        # Write results if we have any DataFrames
+        if combined_dfs:
+            base_name = os.path.basename(os.path.abspath(args.input_path))
+            output_path = write_dataframes_to_csv(combined_dfs, args.output, base_name)
             if args.verbose:
-                print(f"\nProcessed folder '{folder}':")
+                print(f"Results written to: {output_path}")
+                
+        if args.verbose:
+            print(f"\nProcessed directory '{args.input_path}':")
+            for folder, folder_results in results.items():
                 for result in folder_results:
                     if isinstance(result, dict):
                         show_progress(result['path'], result.get('type'))
                         if 'error' in result:
                             log_error(result['path'], result['error'])
-            
-            # Collect DataFrames from processors
-            processor_dfs = {}
-            for processor in registry._processors.values():
-                if not processor.results_df.empty:
-                    proc_type = processor.get_supported_types()[0]  # Use first type as identifier
-                    processor_dfs[proc_type] = processor.results_df
-            
-            # Write results if we have any DataFrames
-            if processor_dfs:
-                output_path = write_dataframes_to_csv(processor_dfs, args.output, folder)
-                if args.verbose:
-                    print(f"Results written to: {output_path}")
     
     else:
         if args.verbose:
