@@ -6,7 +6,7 @@ import os
 from collections import defaultdict
 import astunparse
 
-class FunctionExtractor(ast.NodeVisitor):
+class PythonExtractor(ast.NodeVisitor):
     def __init__(self, filename, globals_only=False):
         self.functions = []
         self.current_class = None
@@ -62,7 +62,7 @@ def extract_functions(source_code, filename, globals_only=False):
         list: List of tuples containing function information
     """
     tree = ast.parse(source_code)
-    extractor = FunctionExtractor(filename, globals_only)
+    extractor = PythonExtractor(filename, globals_only)
     extractor.source_code = source_code
     extractor.visit(tree)
     return extractor.functions
@@ -87,7 +87,7 @@ def process_file(file_path, error_callback=None, globals_only=False):
         with open(file_path, 'r') as f:
             source_code = f.read()
         tree = ast.parse(source_code)  # Let syntax errors propagate
-        extractor = FunctionExtractor(file_path, globals_only)
+        extractor = PythonExtractor(file_path, globals_only)
         extractor.source_code = source_code
         extractor.visit(tree)
         return extractor.functions
