@@ -1,0 +1,45 @@
+---
+# Example YAML file for testing
+name: Example Config
+version: 1.0.0
+
+# Environment variables
+database:
+  host: ${DB_HOST}
+  port: ${DB_PORT:-5432}
+  user: $DB_USER
+
+# URLs
+endpoints:
+  api: https://api.example.com/v1
+  docs: http://docs.example.com
+
+# Nested structures
+services:
+  web:
+    port: 8080
+    env: production
+  worker:
+    queue: tasks
+    concurrency: 5
+
+# Sequences
+dependencies:
+  - numpy>=1.20.0
+  - pandas>1.3.0
+  - requests=2.26.0
+
+# Multiple types
+data:
+  string: hello
+  number: 42
+  float: 3.14
+  boolean: true
+  null_value: null
+  list:
+    - item1
+    - item2
+    - item3
+  nested:
+    key1: value1
+    key2: value2

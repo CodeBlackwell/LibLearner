@@ -20,29 +20,13 @@ from pathlib import Path
 import yaml
 from yaml.parser import ParserError
 from yaml.scanner import ScannerError
+
 from ..file_processor import FileProcessor
+from ..processing_result import YAMLProcessingResult
 
 # Set up a logger for debug output
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-
-class YAMLProcessingResult:
-    """Result object for YAML processing."""
-
-    def __init__(self):
-        """Initialize the YAML processing result."""
-        self.errors: List[str] = []
-        self.documents: List[Dict] = []
-        self.file_info: Dict[str, Any] = {}
-        self.structure: List[Dict] = []
-        self.env_vars: Set[str] = set()
-        self.urls: Set[str] = set()
-        self.types: Dict[str, str] = {}
-        self.services: Set[str] = set()
-        self.dependencies: Dict[str, str] = {}
-        self.api_configs: Dict[str, Dict] = {}
-
 
 class YAMLProcessor(FileProcessor):
     """Processor for YAML files."""
@@ -53,37 +37,42 @@ class YAMLProcessor(FileProcessor):
         self.debug = debug
         if self.debug:
             logger.setLevel(logging.DEBUG)
-        self.supported_types = {'text/x-yaml', 'application/x-yaml', 'text/yaml', 'application/yaml'}
+            
+        # Initialize results DataFrame
+        self.results_df = pd.DataFrame()
+            
+        # Define supported MIME types
+        self.supported_types = {
+            'text/x-yaml',
+            'application/x-yaml',
+            'text/yaml',
+            'application/yaml'
+        }
+        
+        # Initialize patterns
         self.env_var_pattern = re.compile(r'\$\{([^}]+)\}|\$([A-Za-z_][A-Za-z0-9_]*)')
         self.url_pattern = re.compile(r'https?://(?:[-\w.]|(?:%[\da-fA-F]{2}))+(?:[^\s.,;]*[^\s.,;:])?')
+        
+        # Initialize tracking variables
+        self._order_counter = 0
+        self._current_path = []
 
     def get_supported_types(self) -> List[str]:
         """Return list of supported MIME types."""
         return list(self.supported_types)
 
     def process_file(self, file_path: str) -> YAMLProcessingResult:
-        """
-        Process a YAML file and extract structured information.
+        """Process a YAML file and extract structured information."""
+        # Reset counters for new file
+        self._order_counter = 0
+        self._current_path = []
         
-        Args:
-            file_path: Path to the YAML file
-            
-        Returns:
-            YAMLProcessingResult containing:
-            - documents: List of parsed YAML documents
-            - errors: List of any errors encountered
-            - env_vars: Set of environment variables found
-            - urls: Set of URLs found
-            - services: Set of service names found
-            - dependencies: Dict of dependencies found
-            - api_configs: Dict of API configurations
-            - structure: List of document structure information
-        """
         logger.info(f"Starting to process YAML file: {file_path}")
         path = Path(file_path)
         result = YAMLProcessingResult()
         results_data = []
 
+        # Validate file exists
         if not path.exists():
             error_msg = f"Error reading file: File not found - {file_path}"
             result.errors.append(error_msg)
@@ -91,64 +80,163 @@ class YAMLProcessor(FileProcessor):
             return result
 
         try:
-            content = path.read_text()
-            logger.debug(f"Read file content, size: {len(content)} bytes")
+            # Add file metadata
+            result.file_info = {
+                'name': path.name,
+                'path': str(path.absolute()),
+                'size': path.stat().st_size,
+                'last_modified': path.stat().st_mtime
+            }
         except Exception as e:
-            error_msg = f"Error reading file: {str(e)}"
+            error_msg = f"Error getting file info: {str(e)}"
             result.errors.append(error_msg)
             logger.error(error_msg)
             return result
 
-        result.file_info = {
-            'name': path.name,
-            'path': str(path.absolute()),
-            'size': path.stat().st_size,
-            'last_modified': path.stat().st_mtime
-        }
-        logger.debug(f"File info: {result.file_info}")
-
         try:
-            logger.debug("Parsing YAML content")
+            content = path.read_text()
+            logger.debug(f"Read file content, size: {len(content)} bytes")
+            
+            # Parse YAML content
             documents = list(yaml.safe_load_all(content))
-            result.documents = documents
             logger.info(f"Found {len(documents)} YAML documents")
-
-            # Process each document and convert to CSV format
-            for i, doc in enumerate(documents):
+            
+            # Process each document
+            for doc_idx, doc in enumerate(documents):
                 if doc:  # Skip empty documents
-                    logger.debug(f"Processing document {i}: {doc}")
-                    # Convert YAML data to flattened format for CSV
-                    flattened_rows = self.to_csv(doc)
-                    logger.debug(f"Flattened document {i} into {len(flattened_rows)} rows")
-                    for row in flattened_rows:
-                        row.update(result.file_info)  # Add file info to each row
-                        row['type'] = 'text/x-yaml'  # Ensure type is set for CSV output
-                        results_data.append(row)
-                    # Also process for other information
-                    self._process_node('', doc, result, results_data, file_path)
-
+                    logger.debug(f"Processing document {doc_idx}")
+                    self._process_document(doc, doc_idx, result, results_data, file_path)
+            
         except (ParserError, ScannerError) as e:
-            # Log parsing errors but continue processing
             error_msg = f"YAML parsing error: {str(e)}"
             result.errors.append(error_msg)
             logger.error(error_msg)
+            return result
         except Exception as e:
-            # Log unexpected errors
-            error_msg = f"Unexpected error: {str(e)}"
+            error_msg = f"Error processing YAML: {str(e)}"
             result.errors.append(error_msg)
             logger.error(error_msg)
+            return result
 
-        # Update the results DataFrame with the flattened data
+        # Create DataFrame from results
         if results_data:
-            self.results_df = pd.DataFrame(results_data)
-            logger.info(f"Created DataFrame with {len(results_data)} rows and {len(self.results_df.columns)} columns")
-            logger.debug(f"DataFrame columns: {list(self.results_df.columns)}")
-        else:
-            self.results_df = pd.DataFrame()
-            logger.warning("No data extracted from YAML file")
-        
-        return result
+            try:
+                df = pd.DataFrame(results_data)
+                df = df.rename(columns={'type': 'processor_type'})
+                column_order = ['filepath', 'parent_path', 'order', 'name', 
+                              'content', 'props', 'processor_type']
+                df = df[column_order]
+                
+                # Concatenate with existing results
+                if not self.results_df.empty:
+                    self.results_df = pd.concat([self.results_df, df], ignore_index=True)
+                else:
+                    self.results_df = df
+            except Exception as e:
+                error_msg = f"Error creating DataFrame: {str(e)}"
+                result.errors.append(error_msg)
+                logger.error(error_msg)
 
+        return result
+        
+    def _process_document(self, doc: Dict, doc_idx: int, result: YAMLProcessingResult,
+                         results_data: List[Dict], file_path: str) -> None:
+        """Process a single YAML document."""
+        self._order_counter += 1
+        
+        # Store document in result
+        result.data[f'doc_{doc_idx}'] = doc
+        
+        # Create document info
+        doc_name = f"document_{doc_idx}"
+        doc_props = {
+            'env_vars': list(self._extract_env_vars(doc)),
+            'urls': list(self._extract_urls(doc)),
+            'structure': self._analyze_structure(doc)
+        }
+        
+        # Create document entry
+        doc_info = {
+            'name': doc_name,
+            'type': 'document',
+            'content': yaml.dump(doc),
+            'props': str(doc_props),
+            'filepath': file_path,
+            'parent_path': '',  # Documents are top-level
+            'order': self._order_counter
+        }
+        results_data.append(doc_info)
+        
+        # Process document contents
+        if isinstance(doc, dict):
+            self._process_mapping(doc, doc_name, results_data, file_path)
+        elif isinstance(doc, list):
+            self._process_sequence(doc, doc_name, results_data, file_path)
+            
+    def _process_mapping(self, data: Dict, parent_path: str,
+                        results_data: List[Dict], file_path: str) -> None:
+        """Process a YAML mapping node."""
+        for key, value in data.items():
+            self._order_counter += 1
+            current_path = f"{parent_path}.{key}" if parent_path else key
+            
+            # Create mapping entry
+            props = {
+                'key': key,
+                'value_type': type(value).__name__,
+                'env_vars': list(self._extract_env_vars(value)),
+                'urls': list(self._extract_urls(value))
+            }
+            
+            mapping_info = {
+                'name': key,
+                'type': 'mapping',
+                'content': yaml.dump({key: value}),
+                'props': str(props),
+                'filepath': file_path,
+                'parent_path': parent_path,
+                'order': self._order_counter
+            }
+            results_data.append(mapping_info)
+            
+            # Process nested structures
+            if isinstance(value, dict):
+                self._process_mapping(value, current_path, results_data, file_path)
+            elif isinstance(value, list):
+                self._process_sequence(value, current_path, results_data, file_path)
+                
+    def _process_sequence(self, data: List, parent_path: str,
+                         results_data: List[Dict], file_path: str) -> None:
+        """Process a YAML sequence node."""
+        for idx, item in enumerate(data):
+            self._order_counter += 1
+            current_path = f"{parent_path}[{idx}]"
+            
+            # Create sequence entry
+            props = {
+                'index': idx,
+                'value_type': type(item).__name__,
+                'env_vars': list(self._extract_env_vars(item)),
+                'urls': list(self._extract_urls(item))
+            }
+            
+            sequence_info = {
+                'name': f"item_{idx}",
+                'type': 'sequence',
+                'content': yaml.dump([item]),
+                'props': str(props),
+                'filepath': file_path,
+                'parent_path': parent_path,
+                'order': self._order_counter
+            }
+            results_data.append(sequence_info)
+            
+            # Process nested structures
+            if isinstance(item, dict):
+                self._process_mapping(item, current_path, results_data, file_path)
+            elif isinstance(item, list):
+                self._process_sequence(item, current_path, results_data, file_path)
+                
     def _analyze_structure(self, data: Any) -> Dict:
         """Analyze the structure of a YAML node."""
         if isinstance(data, dict):
@@ -171,7 +259,8 @@ class YAMLProcessor(FileProcessor):
             matches = self.env_var_pattern.findall(data)
             for match in matches:
                 var_name = match[0] or match[1]
-                # Keep the default value as part of the variable name
+                # Extract just the variable name before any default value
+                var_name = var_name.split(':-')[0] if ':-' in var_name else var_name
                 env_vars.add(var_name)
         elif isinstance(data, dict):
             for value in data.values():
@@ -185,241 +274,12 @@ class YAMLProcessor(FileProcessor):
         """Extract URLs from YAML content."""
         urls = set()
         if isinstance(data, str):
-            logger.debug(f"Checking string for URLs: {data}")
             matches = self.url_pattern.findall(data)
-            logger.debug(f"Found URL matches: {matches}")
             urls.update(matches)
         elif isinstance(data, dict):
-            logger.debug(f"Processing dictionary keys: {list(data.keys())}")
             for value in data.values():
                 urls.update(self._extract_urls(value))
         elif isinstance(data, list):
-            logger.debug("Processing list items")
             for item in data:
                 urls.update(self._extract_urls(item))
         return urls
-
-    def _analyze_types(self, data: Any, path: str = '') -> Dict[str, str]:
-        """Analyze data types in YAML content."""
-        types = {}
-        if isinstance(data, dict):
-            types[path] = 'mapping' if path else ''
-            for key, value in data.items():
-                new_path = f"{path}.{key}" if path else key
-                types.update(self._analyze_types(value, new_path))
-        elif isinstance(data, list):
-            types[path] = 'sequence'
-            for i, item in enumerate(data):
-                new_path = f"{path}[{i}]"
-                types.update(self._analyze_types(item, new_path))
-        else:
-            if path:
-                type_name = 'null' if data is None else type(data).__name__
-                types[path] = type_name
-        return types
-
-    def _infer_schemas(self, data: Any) -> Dict:
-        """Infer JSON schemas from YAML content."""
-        if isinstance(data, dict):
-            properties = {}
-            for key, value in data.items():
-                properties[key] = self._infer_schemas(value)
-                if key == 'config':
-                    # Store the schema under the 'config' key
-                    return {key: self._infer_schemas(value)}
-            return {
-                'type': 'object',
-                'properties': properties
-            }
-        elif isinstance(data, list):
-            if data:
-                items = self._infer_schemas(data[0])
-            else:
-                items = {}
-            return {
-                'type': 'array',
-                'items': items
-            }
-        else:
-            return {
-                'type': 'str' if isinstance(data, str) else
-                       'int' if isinstance(data, int) else
-                       'float' if isinstance(data, float) else
-                       'bool' if isinstance(data, bool) else
-                       'null' if data is None else
-                       type(data).__name__
-            }
-
-    def to_csv(self, data: Any, sep: str = '.') -> List[Dict]:
-        """Convert YAML data to CSV format."""
-        if isinstance(data, list):
-            # For lists, each item becomes a row
-            rows = []
-            for item in data:
-                row = {}
-                self._flatten_data(item, row, '', sep)
-                if row:
-                    rows.append(row)
-            return rows
-        else:
-            # For dictionaries, create a single row
-            row = {}
-            self._flatten_data(data, row, '', sep)
-            return [row] if row else []
-
-    def _flatten_data(self, data: Any, current_row: Dict, prefix: str, sep: str = '.') -> None:
-        """Helper method to flatten nested data for CSV conversion."""
-        if isinstance(data, dict):
-            for key, value in data.items():
-                new_prefix = f"{prefix}{sep}{key}" if prefix else key
-                if isinstance(value, (dict, list)):
-                    self._flatten_data(value, current_row, new_prefix, sep)
-                else:
-                    current_row[new_prefix] = str(value) if value is not None else ''
-        elif isinstance(data, list):
-            for i, item in enumerate(data):
-                new_prefix = f"{prefix}[{i}]" if prefix else str(i)
-                if isinstance(item, (dict, list)):
-                    self._flatten_data(item, current_row, new_prefix, sep)
-                else:
-                    current_row[new_prefix] = str(item) if item is not None else ''
-        elif prefix:  # Only add value if we have a prefix
-            current_row[prefix] = str(data) if data is not None else ''
-
-    def _process_node(self, path: str, node: Any, result: YAMLProcessingResult, results_data: List[Dict], file_path: str) -> None:
-        """Process a YAML node and extract information."""
-        if isinstance(node, dict):
-            self._process_dict(path, node, result, results_data, file_path)
-            for key, value in node.items():
-                new_path = f"{path}.{key}" if path else key
-                self._process_node(new_path, value, result, results_data, file_path)
-        elif isinstance(node, list):
-            self._process_list(path, node, result, results_data, file_path)
-        else:
-            # Extract URLs and env vars from string values
-            if isinstance(node, str):
-                urls = self._extract_urls(node)
-                result.urls.update(urls)
-                env_vars = self._extract_env_vars(node)
-                result.env_vars.update(env_vars)
-            
-            # Store type information for all values
-            if path:
-                # Special handling for None/null values
-                if node is None:
-                    type_name = 'null'
-                else:
-                    type_name = type(node).__name__
-                result.types[path] = type_name
-                results_data.append({
-                    'type': 'text/x-yaml',
-                    'name': path,
-                    'content': str(node),
-                    'props': str({'value_type': type_name}),
-                    'filepath': file_path
-                })
-
-    def _process_list(self, path: str, node: List, result: YAMLProcessingResult, results_data: List[Dict], file_path: str) -> None:
-        """Process a list node."""
-        # Add to structure
-        result.structure.append({
-            'type': 'sequence',
-            'path': path,
-            'length': len(node)
-        })
-
-        # Add to results DataFrame
-        results_data.append({
-            'type': 'text/x-yaml',
-            'name': path,
-            'content': str(len(node)),
-            'props': str({'length': len(node)}),
-            'filepath': file_path
-        })
-
-        # Check if this is a dependencies list
-        if path == 'dependencies' or path.endswith('.dependencies'):
-            for dep in node:
-                if isinstance(dep, str):
-                    # Split on >= or > or = to get package name and version
-                    parts = re.split(r'(>=|>|=)', dep, maxsplit=1)
-                    if len(parts) > 1:
-                        pkg_name = parts[0].strip()
-                        version = ''.join(parts[1:]).strip()
-                        result.dependencies[pkg_name] = version
-                    else:
-                        # If no version specified, store as is
-                        result.dependencies[dep] = ''
-
-        # Process items
-        for i, item in enumerate(node):
-            new_path = f"{path}[{i}]" if path else str(i)
-            self._process_node(new_path, item, result, results_data, file_path)
-
-    def _process_dict(self, path: str, node: Dict, result: YAMLProcessingResult, results_data: List[Dict], file_path: str) -> None:
-        """Process a dictionary node."""
-        # Add to structure
-        result.structure.append({
-            'type': 'mapping',  # Keep old type name for backward compatibility
-            'name': path if path else 'root',
-            'children': list(node.keys())
-        })
-
-        # Store dictionary info
-        results_data.append({
-            'type': 'text/x-yaml',
-            'name': path if path else 'root',
-            'content': str(node),
-            'props': str({'num_keys': len(node)}),
-            'filepath': file_path
-        })
-
-        # Extract API configurations
-        if path == 'api' or path.endswith('.api'):
-            result.api_configs.update(node)
-
-        # Check for special keys
-        if 'services' in node:
-            services = node['services']
-            if isinstance(services, dict):
-                result.services.update(services.keys())
-            elif isinstance(services, list):
-                # For list of services, collect service names if available
-                service_names = [s.get('name', f'service_{i}') for i, s in enumerate(services) if isinstance(s, dict)]
-                result.services.update(service_names)
-
-        # Extract dependencies
-        if path == 'dependencies' or path.endswith('.dependencies'):
-            if isinstance(node, dict):
-                result.dependencies.update(node)
-            elif isinstance(node, list):
-                # Move list processing to _process_list method
-                self._process_list(path, node, result, results_data, file_path)
-
-        # Process children
-        for key, value in node.items():
-            new_path = f"{path}.{key}" if path else key
-            self._process_node(new_path, value, result, results_data, file_path)
-
-    def _process_string(self, path: str, node: str, result: YAMLProcessingResult, results_data: List[Dict], file_path: str) -> None:
-        """Process a string node."""
-        # Look for environment variables
-        env_vars = self.env_var_pattern.findall(node)
-        if env_vars:
-            result.env_vars.update(var[0] or var[1] for var in env_vars)
-
-        # Look for URLs
-        urls = self.url_pattern.findall(node)
-        if urls:
-            result.urls.update(url[0] for url in urls)
-
-        # Store type information
-        if path:
-            result.types[path] = 'str'
-            results_data.append({
-                'type': 'text/x-yaml',
-                'name': path,
-                'content': node,
-                'props': str({'length': len(node)}),
-                'filepath': file_path
-            })
