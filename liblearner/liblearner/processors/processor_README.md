@@ -1,342 +1,217 @@
-# LibLearner Language Processor Implementation Guide
+## LibLearner Processor Development Guide
 
-This guide provides a comprehensive checklist and examples for implementing new language processors in the LibLearner library. Follow these guidelines to ensure consistent implementation across different language processors.
+This guide provides detailed instructions for developing new file processors in LibLearner. Follow these guidelines to ensure your processor integrates seamlessly with the established architecture.
 
-## Implementation Checklist
+## Architecture Overview
 
-### 1. Basic Setup
-- [ ] Create a new processor class in `processors/` directory
-- [ ] Define proper class inheritance
-- [ ] Import required libraries
-- [ ] Set up logging configuration
+LibLearner processors follow a consistent architecture:
+1. Each processor inherits from the base `FileProcessor` class
+2. Processors use a corresponding `ProcessingResult` class for type-safe results
+3. Results are accumulated in a pandas DataFrame with standardized columns
+4. The processor registry handles MIME type detection and processor routing
 
-Example:
+## Step-by-Step Processor Development
+
+### 1. Create Processing Result Class
+
+First, define a result class in `processing_result.py`:
+
 ```python
-import re
-import os
-import logging
-from typing import List, Dict, Any, Set
-from pathlib import Path
-
-logger = logging.getLogger(__name__)
-
-class JavaProcessor:
-    """Processor for Java files.
+@dataclass
+class YourProcessingResult(ProcessingResult):
+    # Add type-specific fields
+    elements: List[Dict] = field(default_factory=list)
+    errors: List[str] = field(default_factory=list)
+    file_info: Dict = field(default_factory=dict)
     
-    This processor extracts structured information from Java files, including:
-    - Class and interface definitions
-    - Method signatures
-    - Import statements
-    - Dependencies
-    - Type information
-    """
+    def is_valid(self) -> bool:
+        return True  # Define validation logic
+```
+
+### 2. Create Processor Class
+
+Create your processor in `processors/your_processor.py`:
+
+```python
+class YourProcessor(FileProcessor):
     def __init__(self, debug: bool = False):
         super().__init__()
         self.debug = debug
         if self.debug:
             logger.setLevel(logging.DEBUG)
+        
+        # Define supported MIME types
+        self.supported_types = {
+            'your/mime-type',
+            'alternative/mime-type'
+        }
+        
+        # Initialize tracking variables
+        self._all_results = []  # Store all results
+        self._current_path = []  # Track AST path
+        self._order_counter = 0  # Track element order
 ```
 
-### 2. MIME Type Support
-- [ ] Define all supported MIME types in `__init__`
-- [ ] Include both primary and alternative MIME types
-- [ ] Register MIME types in `file_type_detector.py`
-- [ ] Implement `get_supported_types()` method
+### 3. Implement Required Methods
 
-Example:
+Your processor must implement these methods:
+
+#### a. get_supported_types()
 ```python
-def __init__(self):
-    self.supported_types = {
-        'text/x-java',
-        'text/java',
-        'application/x-java'
-    }
-
-def get_supported_types(self):
+def get_supported_types(self) -> List[str]:
     """Return list of supported MIME types."""
-    return self.supported_types
+    return list(self.supported_types)
 ```
 
-### 3. Result Object
-- [ ] Create a result class
-- [ ] Define all necessary attributes
-
-Example:
+#### b. process_file()
 ```python
-class JavaProcessingResult:
-    """Result object for Java processing."""
-    def __init__(self):
-        self.errors: List[str] = []
-        self.file_info: Dict[str, Any] = {}
-        self.classes: List[Dict] = []
-        self.methods: List[Dict] = []
-        self.imports: Set[str] = set()
-        self.dependencies: Dict[str, str] = {}
-        self.types: Dict[str, str] = {}
-        self.structure: List[Dict] = []
-```
-
-### 4. Core Processing Methods
-- [ ] Implement `process_file` method
-- [ ] Create helper methods for different node types
-
-Example:
-```python
-def process_file(self, file_path: str) -> JavaProcessingResult:
-    """Process a Java file and extract structured information."""
-    result = JavaProcessingResult()
+def process_file(self, file_path: str) -> YourProcessingResult:
+    """Process a file and extract structured information."""
+    # Reset counters for new file
+    self._order_counter = 0
     path = Path(file_path)
-    
-    # Set file info
+    result = YourProcessingResult()
+    results_data = []
+
+    # Add file metadata
     result.file_info = {
         'name': path.name,
         'path': str(path.absolute()),
         'size': path.stat().st_size,
         'last_modified': path.stat().st_mtime
     }
-    
+
+    # Process file contents
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-            
-        # Process content
-        self._process_content(content, result)
-        
+        content = path.read_text()
+        # Parse and process content
+        self._process_content(content, result, results_data, file_path)
     except Exception as e:
-        error_msg = f"Error processing file: {str(e)}"
-        result.errors.append(error_msg)
-        logger.error(error_msg)
-    
+        result.errors.append(str(e))
+        logger.error(f"Error processing {file_path}: {e}")
+
+    # Create DataFrame
+    if results_data:
+        df = pd.DataFrame(results_data)
+        df = df.rename(columns={'type': 'processor_type'})
+        column_order = ['filepath', 'parent_path', 'order', 'name', 
+                       'content', 'props', 'processor_type']
+        self.results_df = df[column_order]
+
     return result
+```
 
-def _process_content(self, content: str, result: JavaProcessingResult):
-    """Process Java file content."""
-    # Extract imports
-    imports = self._extract_imports(content)
-    result.imports.update(imports)
+### 4. Implement Processing Logic
+
+Develop methods to process your file type:
+
+```python
+def _process_content(self, content: str, result: YourProcessingResult, 
+                    results_data: List[Dict], file_path: str) -> None:
+    """Process file content and extract elements."""
+    # Parse content (use appropriate parser for your file type)
+    elements = your_parser.parse(content)
     
-    # Extract classes
-    classes = self._extract_classes(content)
-    result.classes.extend(classes)
-    
-    # Extract methods
-    methods = self._extract_methods(content)
-    result.methods.extend(methods)
+    for element in elements:
+        self._order_counter += 1
+        element_info = {
+            'name': element.name,
+            'type': element.type,  # Use specific types (class, function, etc.)
+            'content': element.content,
+            'props': str(element.properties),
+            'filepath': file_path,
+            'parent_path': self._get_current_path(),
+            'order': self._order_counter
+        }
+        results_data.append(element_info)
 ```
 
-### 5. Language-Specific Extractors
-- [ ] Implement regex patterns for common patterns
-- [ ] Create extraction methods
+### 5. DataFrame Structure
 
-Example:
-```python
-def _setup_patterns(self):
-    """Initialize regex patterns."""
-    self.import_pattern = re.compile(
-        r'import\s+(?:static\s+)?([^\s;]+)(?:\s*;\s*)?'
-    )
-    self.class_pattern = re.compile(
-        r'(?:public|private|protected)?\s*class\s+(\w+)(?:\s+extends\s+(\w+))?(?:\s+implements\s+([^{]+))?'
-    )
-    self.method_pattern = re.compile(
-        r'(?:public|private|protected)?\s*(?:static\s+)?(?:<[^>]+>\s+)?(\w+)\s+(\w+)\s*\([^)]*\)'
-    )
+Ensure your processor outputs these standardized columns:
+- `filepath`: Absolute path to the source file
+- `parent_path`: Dot notation path showing element location
+- `order`: Sequential order of element discovery
+- `name`: Element name
+- `content`: Actual code/content
+- `props`: Element-specific properties as string
+- `processor_type`: Type of element (class, function, etc.)
 
-def _extract_imports(self, content: str) -> Set[str]:
-    """Extract import statements."""
-    imports = set()
-    for match in self.import_pattern.finditer(content):
-        imports.add(match.group(1))
-    return imports
-```
+### 6. Best Practices
 
-### 6. Data Structure Handling
-- [ ] Implement proper type inference
-- [ ] Handle nested structures
-- [ ] Maintain path information
-
-Example:
-```python
-def _analyze_types(self, node: Any, path: str = '') -> Dict[str, str]:
-    """Analyze and record type information."""
-    types = {}
-    if isinstance(node, dict):
-        types[path] = 'object'
-        for key, value in node.items():
-            new_path = f"{path}.{key}" if path else key
-            types.update(self._analyze_types(value, new_path))
-    elif isinstance(node, list):
-        types[path] = 'array'
-        for i, item in enumerate(node):
-            new_path = f"{path}[{i}]"
-            types.update(self._analyze_types(item, new_path))
-    else:
-        if path:
-            types[path] = type(node).__name__
-    return types
-```
-
-### 7. CSV Output Support
-- [ ] Ensure consistent MIME type usage
-- [ ] Implement data flattening
-- [ ] Handle special characters
-
-Example:
-```python
-def to_csv(self, data: Any, sep: str = '.') -> List[Dict]:
-    """Convert processed data to CSV format."""
-    if isinstance(data, list):
-        rows = []
-        for item in data:
-            row = {}
-            self._flatten_data(item, row, '', sep)
-            if row:
-                rows.append(row)
-        return rows
-    else:
-        row = {}
-        self._flatten_data(data, row, '', sep)
-        return [row] if row else []
-
-def _flatten_data(self, data: Any, current_row: Dict, prefix: str, sep: str = '.'):
-    """Flatten nested data structures for CSV output."""
-    if isinstance(data, dict):
-        for key, value in data.items():
-            new_prefix = f"{prefix}{sep}{key}" if prefix else key
-            if isinstance(value, (dict, list)):
-                self._flatten_data(value, current_row, new_prefix, sep)
-            else:
-                current_row[new_prefix] = str(value) if value is not None else ''
-```
-
-### 8. Error Handling
-- [ ] Implement comprehensive error catching
-- [ ] Add detailed error messages
-
-Example:
-```python
-try:
-    # Process file content
-    pass
-except UnicodeDecodeError as e:
-    error_msg = f"File encoding error: {str(e)}"
-    result.errors.append(error_msg)
-    logger.error(error_msg)
-except Exception as e:
-    error_msg = f"Unexpected error: {str(e)}"
-    result.errors.append(error_msg)
-    logger.error(error_msg)
-```
-
-### 9. Testing
-- [ ] Create test files
-- [ ] Implement unit tests
-
-Example:
-```python
-def test_java_processing(self):
-    """Test Java file processing."""
-    # Create test file
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        test_file = Path(tmp_dir) / "test.java"
-        with open(test_file, 'w') as f:
-            f.write('''
-                import java.util.List;
-                import java.util.Map;
-                
-                public class TestClass {
-                    private String name;
-                    
-                    public String getName() {
-                        return name;
-                    }
-                }
-            ''')
-        
-        # Process file
-        processor = JavaProcessor()
-        result = processor.process_file(str(test_file))
-        
-        # Validate results
-        self.assertEqual(len(result.errors), 0)
-        self.assertEqual(len(result.imports), 2)
-        self.assertEqual(len(result.classes), 1)
-        self.assertEqual(len(result.methods), 1)
-```
-
-## Integration Tips
-
-1. **File Type Detection**:
-```python
-# In file_type_detector.py
-MIME_TYPE_MAPPING = {
-    '.java': 'text/x-java',
-    '.py': 'text/x-python',
-    '.yaml': 'text/x-yaml',
-    # Add new mappings here
-}
-```
-
-2. **Processor Registration**:
-```python
-# In file_processor.py
-def _get_processor(self, mime_type: str):
-    if mime_type in {'text/x-java', 'text/java'}:
-        return JavaProcessor()
-    elif mime_type in {'text/x-python', 'application/x-python'}:
-        return PythonProcessor()
-    # Add new processors here
-```
-
-## Best Practices
-
-1. **Consistent MIME Types**
-   - Use standard MIME types
-   - Support multiple type variations
-   - Document supported types
-
-2. **Error Handling**
-   - Catch specific exceptions
-   - Provide detailed error messages
-   - Log errors appropriately
+1. **Error Handling**
+   - Catch and log all exceptions
+   - Store errors in the result object
    - Continue processing when possible
 
+2. **Path Tracking**
+   - Maintain accurate parent paths
+   - Use dot notation for nested elements
+   - Update paths when entering/leaving scopes
+
 3. **Type Information**
-   - Use type hints
-   - Document parameter types
-   - Validate input types
+   - Use specific, descriptive type names
+   - Be consistent with type naming
+   - Document supported types
 
-4. **Code Organization**
-   - Keep methods focused
-   - Use clear naming
-   - Document complex logic
-   - Follow existing patterns
+4. **Performance**
+   - Process files efficiently
+   - Minimize memory usage
+   - Use appropriate data structures
 
-5. **Testing**
-   - Test edge cases
-   - Validate all outputs
-   - Test error conditions
-   - Use realistic test data
+### 7. Testing
 
-## Performance Considerations
+Create tests in `tests/processors/`:
+1. Test file type detection
+2. Test element extraction
+3. Test error handling
+4. Test DataFrame structure
+5. Test nested element handling
 
-1. **Memory Usage**
-   - Process large files in chunks
-   - Clear temporary data structures
-   - Use generators where appropriate
+### 8. Registration
 
-2. **Processing Speed**
-   - Optimize regex patterns
-   - Cache compiled patterns
-   - Use efficient data structures
+Register your processor in `bin/process_files`:
 
-3. **Logging**
-   - Use appropriate log levels
-   - Enable debug logging when needed
-   - Log performance metrics
+```python
+registry.register_processor(YourProcessor())
+```
 
-## References
+## Example Processor Types
 
-- [MIME Types Reference](https://www.iana.org/assignments/media-types/media-types.xhtml)
-- [Python Regex Documentation](https://docs.python.org/3/library/re.html)
-- [Python Type Hints](https://docs.python.org/3/library/typing.html)
+Common processor types include:
+- Python (.py)
+- JavaScript (.js)
+- TypeScript (.ts)
+- JSON (.json)
+- YAML (.yml, .yaml)
+- Markdown (.md)
+- Jupyter Notebooks (.ipynb)
+
+## Integration Checklist
+
+✓ Processing result class defined  
+✓ Processor class inherits FileProcessor  
+✓ Supported MIME types declared  
+✓ File processing logic implemented  
+✓ Error handling in place  
+✓ Path tracking implemented  
+✓ Order tracking implemented  
+✓ Standard DataFrame columns  
+✓ Tests written  
+✓ Processor registered
+
+## Troubleshooting
+
+Common issues and solutions:
+1. **MIME Type Detection**: Ensure types match python-magic output
+2. **Path Tracking**: Verify _current_path management
+3. **DataFrame Structure**: Check column names and order
+4. **Memory Usage**: Monitor result accumulation
+5. **Performance**: Profile file processing
+
+## Need Help?
+
+1. Check the Python processor implementation
+2. Review the processor registry
+3. Examine test cases
+4. Consult the development team
