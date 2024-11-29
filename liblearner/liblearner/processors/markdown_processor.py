@@ -124,9 +124,28 @@ class MarkdownProcessor(FileProcessor):
             raise FileNotFoundError(f"File not found: {file_path}")
         
         try:
-            # Parse frontmatter and content
-            post = frontmatter.load(file_path)
-            content = post.content
+            # Read file content
+            content = path.read_text()
+            
+            # Parse frontmatter
+            try:
+                # Parse frontmatter using frontmatter v3.0.8 API
+                parsed = frontmatter.parse(content)
+                frontmatter_data = parsed[0] if parsed and len(parsed) > 0 else {}
+                content = parsed[1] if parsed and len(parsed) > 1 else content
+            except Exception as e:
+                logger.warning(f"Failed to parse frontmatter in {file_path}: {e}")
+                frontmatter_data = {}
+            
+            # Store file info with frontmatter
+            result.file_info = {
+                'name': path.name,
+                'path': str(path.absolute()),
+                'size': path.stat().st_size,
+                'last_modified': path.stat().st_mtime,
+                'type': 'markdown',
+                'frontmatter': frontmatter_data
+            }
             
             # Validate content for malformed elements
             validation_errors = self._validate_content(content)
@@ -134,9 +153,6 @@ class MarkdownProcessor(FileProcessor):
                 for error in validation_errors:
                     result.errors.append(error)
                     logger.warning(f"Validation error in {file_path}: {error}")
-            
-            # Store metadata
-            result.metadata = post.metadata if post.metadata else {}
             
             # Process imports (MDX specific)
             if str(path).endswith('.mdx'):
@@ -153,7 +169,8 @@ class MarkdownProcessor(FileProcessor):
             
             # Create DataFrame
             df = pd.DataFrame(results_data) if results_data else pd.DataFrame(columns=[
-                'filepath', 'parent_path', 'order', 'name', 'content', 'props', 'processor_type'
+                'filepath', 'parent_path', 'order', 'name', 
+                'content', 'props', 'processor_type'
             ])
             
             if not df.empty:

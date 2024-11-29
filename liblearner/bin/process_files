@@ -124,8 +124,9 @@ def main():
     registry.register_processor(JupyterProcessor())
     registry.register_processor(YAMLProcessor())
     registry.register_processor(MarkdownProcessor())  # Enable Markdown processor
+    registry.register_processor(JavaScriptProcessor())
     #@TODO: Build each processor slowly
-    # registry.register_processor(JavaScriptProcessor())
+
     # registry.register_processor(JSONProcessor())
     
     # Process input path
