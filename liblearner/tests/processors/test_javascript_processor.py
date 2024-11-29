@@ -213,3 +213,32 @@ def test_import_export_statements(javascript_processor, create_temp_js):
     
     # Check for errors in processing
     assert not result.errors, f"Errors found: {result.errors}"
+
+def test_dynamic_imports_and_meta(javascript_processor, create_temp_js):
+    """Test processing of dynamic imports and import.meta usage."""
+    content = '''
+    const packagePath = resolve(dirname(fileURLToPath(import.meta.url)), "../package.json");
+    const packageData = JSON.parse(readFileSync(packagePath));
+
+    for (const moduleName in packageData.dependencies) {
+        const module = await import(moduleName);
+        for (const propertyName in module) {
+            if (propertyName !== "version") {
+                assert(propertyName in d3);
+            }
+        }
+    }
+    '''
+    js_file = create_temp_js(content)
+    result = javascript_processor.process_file(str(js_file))
+    
+    # Check for errors in processing
+    assert not result.errors, f"Errors found: {result.errors}"
+    
+    # Verify dynamic imports are captured
+    dynamic_imports = [d for d in result.imports if d.get('dynamic', False)]
+    assert len(dynamic_imports) > 0, "No dynamic imports detected"
+    
+    # Verify import.meta usage is captured
+    meta_usages = [d for d in result.imports if d.get('meta_usage', False)]
+    assert len(meta_usages) > 0, "No import.meta usage detected"
