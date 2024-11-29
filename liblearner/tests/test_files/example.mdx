@@ -1,0 +1,56 @@
+---
+title: Example MDX
+author: LibLearner Team
+date: 2024-01-01
+layout: BlogPost
+---
+
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+
+# Example MDX File
+
+This is an example MDX file that includes React components.
+
+## Interactive Components
+
+<Button variant="primary" onClick={() => alert('Clicked!')}>
+  Click Me
+</Button>
+
+<Card>
+  This is a card component that can contain *Markdown* inside it!
+</Card>
+
+## Code Examples
+
+Here's some inline code: `console.log("Hello, World!")`.
+
+And a code block:
+
+```typescript
+interface Props {
+  name: string;
+  onClick: () => void;
+}
+
+export const Greeting: React.FC<Props> = ({ name, onClick }) => {
+  return (
+    <div onClick={onClick}>
+      Hello, {name}!
+    </div>
+  );
+}
+```
+
+## Lists with Components
+
+- Regular item
+- <Button>Button in list</Button>
+- Another item
+
+## Self-Closing Components
+
+<Image src="/example.png" alt="Example" />
+<Divider />
+<Spacer size="medium" />

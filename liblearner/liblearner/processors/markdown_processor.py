@@ -1,271 +1,399 @@
+"""
+Markdown Processor for LibLearner.
+
+This processor extracts structured information from Markdown and MDX files, including:
+- Headers and their hierarchy
+- Code blocks with language information
+- Lists (ordered and unordered)
+- Links and references
+- Blockquotes
+- Tables
+- Emphasis and strong text
+- JSX/TSX components (for MDX)
+- Frontmatter metadata
+"""
+
 import re
+import logging
 import pandas as pd
-from bs4 import BeautifulSoup
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union, Set
 from pathlib import Path
+import yaml
+import frontmatter
+import os
+import json
+
 from ..file_processor import FileProcessor
+from ..processing_result import MarkdownProcessingResult
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class MarkdownProcessor(FileProcessor):
-    """
-    Markdown Processor for LibLearner.
-
-    This processor extracts structured information from Markdown files, including:
-    - Headers and their hierarchy
-    - Code blocks with language information
-    - Lists (ordered and unordered)
-    - Links and references
-    - Blockquotes
-    - Tables
-    - Emphasis and strong text
-    """
+    """Processor for Markdown and MDX files."""
     
-    def __init__(self):
+    def __init__(self, debug: bool = False):
         """Initialize the Markdown processor."""
         super().__init__()
-        # Regular expressions for Markdown elements
-        self.header_pattern = re.compile(r'^(#{1,6})\s+(.+)$', re.MULTILINE)
-        self.code_block_pattern = re.compile(r'```(\w*)\n(.*?)```', re.DOTALL)
-        self.inline_code_pattern = re.compile(r'(?<!`)`([^`]+)`(?!`)')  # Updated to avoid matching code blocks
-        self.list_pattern = re.compile(r'^\s*[-*+]\s+(.+)$|\s*\d+\.\s+(.+)$', re.MULTILINE)
-        self.link_pattern = re.compile(r'\[([^\]]+)\]\(([^)]+)\)')
-        self.blockquote_pattern = re.compile(r'^\s*>\s+(.+)$', re.MULTILINE)
-        self.table_pattern = re.compile(r'^\|(.+)\|$', re.MULTILINE)
-        self.emphasis_pattern = re.compile(r'(?<!\*)\*(?!\*)([^*]+)\*(?!\*)|(?<!_)_(?!_)([^_]+)_(?!_)')
-        self.strong_pattern = re.compile(r'\*\*([^*]+)\*\*|__([^_]+)__')
-
-    def get_supported_types(self) -> List[str]:
-        """
-        Returns the MIME types this processor can handle.
-        
-        Returns:
-            List of supported MIME types (in this case, Markdown and MDX files)
-        """
-        return ['text/markdown', 'text/mdx']
-    
-    def process_file(self, file_path: str) -> Dict:
-        """
-        Process a Markdown file and extract structured information.
-        
-        Args:
-            file_path: Path to the Markdown file
+        self.debug = debug
+        if self.debug:
+            logger.setLevel(logging.DEBUG)
             
-        Returns:
-            Dictionary containing extracted information:
-            {
-                'headers': List of (level, text) tuples,
-                'code_blocks': List of (language, code) tuples,
-                'inline_code': List of code snippets,
-                'lists': List of list items,
-                'links': List of (text, url) tuples,
-                'blockquotes': List of quoted text,
-                'tables': List of table rows,
-                'emphasized_text': List of emphasized text,
-                'strong_text': List of strong text,
-                'metadata': Dictionary of metadata (if present),
-                'toc': List of headers in table of contents format
-            }
-        """
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-        except Exception as e:
-            self.results_df = pd.DataFrame(columns=['type', 'name', 'content', 'props', 'filepath'])
-            raise RuntimeError(f"Error reading file {file_path}: {str(e)}")
+        # Initialize results DataFrame
+        self.results_df = pd.DataFrame()
+            
+        # Define supported MIME types
+        self.supported_types = {
+            'text/markdown',
+            'text/x-markdown',
+            'text/mdx'
+        }
+            
+        # Initialize patterns
+        self._init_patterns()
+        
+        # Initialize tracking variables
+        self._order_counter = 0
+        self._current_path = []
+        
+    def _init_patterns(self):
+        """Initialize regex patterns for markdown parsing."""
+        self.patterns = {
+            'header': re.compile(r'^(#{1,6})\s+(.+)$', re.MULTILINE),
+            'code_block': re.compile(r'```(\w*)\n(.*?)\n```', re.DOTALL),
+            'jsx_component': re.compile(r'<([A-Z][a-zA-Z]*)[^>]*>.*?</\1>', re.DOTALL),
+            'inline_jsx': re.compile(r'<([A-Z][a-zA-Z]*)[^>]*/>', re.MULTILINE),
+            'list_item': re.compile(r'^\s*[-*+]\s+(.+)$', re.MULTILINE),
+            'ordered_list': re.compile(r'^\s*\d+\.\s+(.+)$', re.MULTILINE),
+            'link': re.compile(r'\[([^\]]+)\]\(([^)"]+)(?:\s+"[^"]*")?\)'),
+            'reference_link': re.compile(r'\[([^\]]+)\]\[([^\]]+)\]'),
+            'reference_def': re.compile(r'^\[([^\]]+)\]:\s*(.+)$', re.MULTILINE),
+            'direct_link': re.compile(r'<(https?://[^>]+)>', re.MULTILINE),
+            'blockquote': re.compile(r'^\s*>\s+(.+)$', re.MULTILINE),
+            'table': re.compile(r'^\|(.+)\|$\n\|[-:\s|]+\|\n((?:\|.+\|\n?)+)', re.MULTILINE),
+            'emphasis': re.compile(r'\*([^*]+)\*|_([^_]+)_'),
+            'strong': re.compile(r'\*\*([^*]+)\*\*|__([^_]+)__')
+        }
+        
+    def get_supported_types(self) -> List[str]:
+        """Return list of supported MIME types."""
+        return list(self.supported_types)
+        
+    def _validate_content(self, content: str) -> List[str]:
+        """Validate markdown content for malformed elements."""
+        errors = []
+        
+        # Check for unclosed code blocks
+        code_block_starts = len(re.findall(r'```\w*\n', content))
+        code_block_ends = len(re.findall(r'\n```', content))
+        if code_block_starts != code_block_ends:
+            errors.append("Found unclosed code block")
+            
+        # Check for unclosed links
+        link_pattern = r'\[([^\]]+)(?!\])'
+        unclosed_links = re.findall(link_pattern, content)
+        if unclosed_links:
+            errors.append(f"Found unclosed links: {', '.join(unclosed_links)}")
+            
+        # Check for unclosed blockquotes (basic check)
+        lines = content.split('\n')
+        in_blockquote = False
+        for i, line in enumerate(lines):
+            if line.strip().startswith('>'):
+                in_blockquote = True
+            elif in_blockquote and line.strip() and not line.strip().startswith('>'):
+                if i + 1 < len(lines) and lines[i + 1].strip().startswith('>'):
+                    continue
+                errors.append("Found unclosed blockquote")
+                break
+                
+        return errors
 
-        # First, remove code blocks to avoid interference with inline code matching
-        code_blocks = []
-        def store_code_block(match):
-            code_blocks.append((match.group(1), match.group(2).strip()))
-            return ''  # Remove the code block from the content
-
-        content_without_blocks = self.code_block_pattern.sub(store_code_block, content)
-
-        # Extract all elements
-        headers = self._extract_headers(content)
-        inline_code = self._extract_inline_code(content_without_blocks)
-        lists = self._extract_lists(content)
-        links = self._extract_links(content)
-        blockquotes = self._extract_blockquotes(content)
-        tables = self._extract_tables(content)
-        emphasized = self._extract_emphasis(content)
-        strong = self._extract_strong(content)
-        metadata = self._extract_metadata(content)
-        toc = self._generate_toc(headers)
-
-        # Create results data for DataFrame
+    def process_file(self, file_path: str) -> MarkdownProcessingResult:
+        """Process a markdown or MDX file and extract structured information."""
+        self._order_counter = 0
+        result = MarkdownProcessingResult()
         results_data = []
-
-        # Add headers
-        for level, text in headers:
+        
+        path = Path(file_path)
+        
+        # Check file existence first
+        if not os.path.exists(file_path):
+            logger.error(f"Error processing {file_path}: File not found")
+            raise FileNotFoundError(f"File not found: {file_path}")
+        
+        try:
+            # Parse frontmatter and content
+            post = frontmatter.load(file_path)
+            content = post.content
+            
+            # Validate content for malformed elements
+            validation_errors = self._validate_content(content)
+            if validation_errors:
+                for error in validation_errors:
+                    result.errors.append(error)
+                    logger.warning(f"Validation error in {file_path}: {error}")
+            
+            # Store metadata
+            result.metadata = post.metadata if post.metadata else {}
+            
+            # Process imports (MDX specific)
+            if str(path).endswith('.mdx'):
+                self._process_imports(content, results_data, file_path)
+            
+            # Process markdown elements
+            self._process_headers(content, results_data, file_path)
+            self._process_code_blocks(content, results_data, file_path)
+            self._process_jsx_components(content, results_data, file_path)
+            self._process_lists(content, results_data, file_path)
+            self._process_links(content, results_data, file_path)
+            self._process_blockquotes(content, results_data, file_path)
+            self._process_tables(content, results_data, file_path)
+            
+            # Create DataFrame
+            df = pd.DataFrame(results_data) if results_data else pd.DataFrame(columns=[
+                'filepath', 'parent_path', 'order', 'name', 'content', 'props', 'processor_type'
+            ])
+            
+            if not df.empty:
+                df = df.rename(columns={'type': 'processor_type'})
+                column_order = ['filepath', 'parent_path', 'order', 'name', 
+                              'content', 'props', 'processor_type']
+                df = df[column_order]
+                
+                # Concatenate with existing results
+                if not self.results_df.empty:
+                    self.results_df = pd.concat([self.results_df, df], ignore_index=True)
+                else:
+                    self.results_df = df
+            
+            # Set the DataFrame in the result object
+            result.df = df
+                    
+        except Exception as e:
+            result.errors.append(str(e))
+            logger.error(f"Error processing {file_path}: {e}")
+            
+            # Initialize empty DataFrame for error cases
+            result.df = pd.DataFrame(columns=[
+                'filepath', 'parent_path', 'order', 'name', 'content', 'props', 'processor_type'
+            ])
+            
+        return result
+        
+    def _process_imports(self, content: str, results_data: List[Dict], file_path: str):
+        """Process MDX import statements."""
+        import_lines = re.finditer(r'^import\s+.*$', content, re.MULTILINE)
+        for match in import_lines:
+            self._order_counter += 1
             results_data.append({
-                'type': 'header',
+                'filepath': str(file_path),
+                'parent_path': '',
+                'order': self._order_counter,
+                'name': 'import',
+                'content': match.group(0),
+                'props': '{}',
+                'type': 'import'
+            })
+            
+    def _process_headers(self, content: str, results_data: List[Dict], file_path: str):
+        """Process markdown headers."""
+        for match in self.patterns['header'].finditer(content):
+            level = len(match.group(1))
+            text = match.group(2)
+            self._order_counter += 1
+            results_data.append({
+                'filepath': str(file_path),
+                'parent_path': '.'.join(self._current_path),
+                'order': self._order_counter,
                 'name': f'h{level}',
                 'content': text,
-                'props': str({'level': level}),
-                'filepath': file_path
+                'props': f'{{"level": {level}}}',
+                'type': 'header'
             })
-
-        # Add code blocks
-        for idx, (lang, code) in enumerate(code_blocks):
+            
+    def _process_code_blocks(self, content: str, results_data: List[Dict], file_path: str):
+        """Process code blocks with language information."""
+        for match in self.patterns['code_block'].finditer(content):
+            lang = match.group(1) or 'text'
+            code = match.group(2)
+            self._order_counter += 1
             results_data.append({
-                'type': 'code_block',
-                'name': f'code_{idx}',
+                'filepath': str(file_path),
+                'parent_path': '.'.join(self._current_path),
+                'order': self._order_counter,
+                'name': 'code',
                 'content': code,
-                'props': str({'language': lang or 'text'}),
-                'filepath': file_path
+                'props': f'{{"language": "{lang}"}}',
+                'type': 'code_block'
             })
-
-        # Add inline code
-        for idx, code in enumerate(inline_code):
+            
+    def _process_jsx_components(self, content: str, results_data: List[Dict], file_path: str):
+        """Process JSX/TSX components in MDX files."""
+        # Process full components
+        for match in self.patterns['jsx_component'].finditer(content):
+            component_name = match.group(1)
+            component_content = match.group(0)
+            self._order_counter += 1
             results_data.append({
-                'type': 'inline_code',
-                'name': f'inline_{idx}',
-                'content': code,
-                'props': str({}),
-                'filepath': file_path
+                'filepath': str(file_path),
+                'parent_path': '.'.join(self._current_path),
+                'order': self._order_counter,
+                'name': component_name,
+                'content': component_content,
+                'props': '{}',  # Could be enhanced to parse actual props
+                'type': 'jsx_component'
             })
-
-        # Add lists
-        for idx, item in enumerate(lists):
+            
+        # Process self-closing components
+        for match in self.patterns['inline_jsx'].finditer(content):
+            component_name = match.group(1)
+            self._order_counter += 1
             results_data.append({
-                'type': 'list_item',
-                'name': f'item_{idx}',
-                'content': item,
-                'props': str({}),
-                'filepath': file_path
+                'filepath': str(file_path),
+                'parent_path': '.'.join(self._current_path),
+                'order': self._order_counter,
+                'name': component_name,
+                'content': match.group(0),
+                'props': '{}',
+                'type': 'jsx_component'
             })
-
-        # Add links
-        for idx, (text, url) in enumerate(links):
+            
+    def _process_lists(self, content: str, results_data: List[Dict], file_path: str):
+        """Process markdown lists."""
+        # Process unordered lists
+        for match in self.patterns['list_item'].finditer(content):
+            self._order_counter += 1
             results_data.append({
-                'type': 'link',
+                'filepath': str(file_path),
+                'parent_path': '.'.join(self._current_path),
+                'order': self._order_counter,
+                'name': 'list_item',
+                'content': match.group(1),
+                'props': '{"ordered": false}',
+                'type': 'list_item'
+            })
+            
+        # Process ordered lists
+        for match in self.patterns['ordered_list'].finditer(content):
+            self._order_counter += 1
+            results_data.append({
+                'filepath': str(file_path),
+                'parent_path': '.'.join(self._current_path),
+                'order': self._order_counter,
+                'name': 'list_item',
+                'content': match.group(1),
+                'props': '{"ordered": true}',
+                'type': 'list_item'
+            })
+            
+    def _process_links(self, content: str, results_data: List[Dict], file_path: str):
+        """Process links."""
+        # Process standard links
+        for match in self.patterns['link'].finditer(content):
+            self._order_counter += 1
+            text, url = match.groups()
+            results_data.append({
+                'filepath': str(file_path),
+                'parent_path': '.'.join(self._current_path),
+                'order': self._order_counter,
                 'name': text,
                 'content': url,
-                'props': str({}),
-                'filepath': file_path
+                'props': json.dumps({"text": text}),
+                'type': 'link'
             })
-
-        # Add blockquotes
-        for idx, quote in enumerate(blockquotes):
+            
+        # Process reference-style links
+        references = {}
+        for match in self.patterns['reference_def'].finditer(content):
+            ref_id, url = match.groups()
+            references[ref_id.lower()] = url.strip()
+            
+        for match in self.patterns['reference_link'].finditer(content):
+            text, ref_id = match.groups()
+            url = references.get(ref_id.lower())
+            if url:
+                self._order_counter += 1
+                results_data.append({
+                    'filepath': str(file_path),
+                    'parent_path': '.'.join(self._current_path),
+                    'order': self._order_counter,
+                    'name': text,
+                    'content': url,
+                    'props': json.dumps({"text": text, "reference": ref_id}),
+                    'type': 'link'
+                })
+                
+        # Process direct links
+        for match in self.patterns['direct_link'].finditer(content):
+            url = match.group(1)
+            self._order_counter += 1
             results_data.append({
-                'type': 'blockquote',
+                'filepath': str(file_path),
+                'parent_path': '.'.join(self._current_path),
+                'order': self._order_counter,
+                'name': url,
+                'content': url,
+                'props': json.dumps({"text": url, "direct": True}),
+                'type': 'link'
+            })
+            
+    def _process_blockquotes(self, content: str, results_data: List[Dict], file_path: str):
+        """Process blockquotes."""
+        for idx, match in enumerate(self.patterns['blockquote'].finditer(content)):
+            self._order_counter += 1
+            results_data.append({
+                'filepath': str(file_path),
+                'parent_path': '.'.join(self._current_path),
+                'order': self._order_counter,
                 'name': f'quote_{idx}',
-                'content': quote,
-                'props': str({}),
-                'filepath': file_path
+                'content': match.group(1).strip(),
+                'props': '{}',
+                'type': 'blockquote'
             })
-
-        # Add tables
-        for idx, row in enumerate(tables):
+            
+    def _process_tables(self, content: str, results_data: List[Dict], file_path: str):
+        """Process tables."""
+        for idx, match in enumerate(self.patterns['table'].finditer(content)):
+            self._order_counter += 1
+            cells = [cell.strip() for cell in match.group(1).split('|')]
             results_data.append({
-                'type': 'table_row',
+                'filepath': str(file_path),
+                'parent_path': '.'.join(self._current_path),
+                'order': self._order_counter,
                 'name': f'row_{idx}',
-                'content': row,
-                'props': str({}),
-                'filepath': file_path
+                'content': '|'.join(cells),
+                'props': f'{{"cells": {cells}}}',
+                'type': 'table_row'
             })
-
-        # Add emphasized text
-        for idx, text in enumerate(emphasized):
+            
+    def _process_emphasis(self, content: str, results_data: List[Dict], file_path: str):
+        """Process emphasized text."""
+        for idx, match in enumerate(self.patterns['emphasis'].finditer(content)):
+            self._order_counter += 1
+            text = match.group(1) or match.group(2)
             results_data.append({
-                'type': 'emphasis',
+                'filepath': str(file_path),
+                'parent_path': '.'.join(self._current_path),
+                'order': self._order_counter,
                 'name': f'em_{idx}',
                 'content': text,
-                'props': str({}),
-                'filepath': file_path
+                'props': '{}',
+                'type': 'emphasis'
             })
-
-        # Add strong text
-        for idx, text in enumerate(strong):
+            
+    def _process_strong(self, content: str, results_data: List[Dict], file_path: str):
+        """Process strong text."""
+        for idx, match in enumerate(self.patterns['strong'].finditer(content)):
+            self._order_counter += 1
+            text = match.group(1) or match.group(2)
             results_data.append({
-                'type': 'strong',
+                'filepath': str(file_path),
+                'parent_path': '.'.join(self._current_path),
+                'order': self._order_counter,
                 'name': f'strong_{idx}',
                 'content': text,
-                'props': str({}),
-                'filepath': file_path
+                'props': '{}',
+                'type': 'strong'
             })
-
-        # Update the results DataFrame
-        self.results_df = pd.DataFrame(results_data)
-
-        # Return the legacy format for backward compatibility
-        return {
-            'type': 'markdown',
-            'path': file_path,
-            'headers': headers,
-            'code_blocks': code_blocks,
-            'inline_code': inline_code,
-            'lists': lists,
-            'links': links,
-            'blockquotes': blockquotes,
-            'tables': tables,
-            'emphasized_text': emphasized,
-            'strong_text': strong,
-            'metadata': metadata,
-            'toc': toc
-        }
-
-    def _extract_headers(self, content: str) -> List[Tuple[int, str]]:
-        """Extract headers with their levels."""
-        headers = []
-        for match in self.header_pattern.finditer(content):
-            level = len(match.group(1))  # Number of # symbols
-            text = match.group(2).strip()
-            headers.append((level, text))
-        return headers
-
-    def _extract_inline_code(self, content: str) -> List[str]:
-        """Extract inline code snippets."""
-        return [match.group(1) for match in self.inline_code_pattern.finditer(content)]
-
-    def _extract_lists(self, content: str) -> List[str]:
-        """Extract list items."""
-        return [match.group(1) or match.group(2) for match in self.list_pattern.finditer(content)]
-
-    def _extract_links(self, content: str) -> List[Tuple[str, str]]:
-        """Extract links with their text and URLs."""
-        return [(match.group(1), match.group(2)) for match in self.link_pattern.finditer(content)]
-
-    def _extract_blockquotes(self, content: str) -> List[str]:
-        """Extract blockquotes."""
-        return [match.group(1) for match in self.blockquote_pattern.finditer(content)]
-
-    def _extract_tables(self, content: str) -> List[str]:
-        """Extract table rows."""
-        return [match.group(1).strip() for match in self.table_pattern.finditer(content)]
-
-    def _extract_emphasis(self, content: str) -> List[str]:
-        """Extract emphasized text."""
-        return [match.group(1) or match.group(2) for match in self.emphasis_pattern.finditer(content)]
-
-    def _extract_strong(self, content: str) -> List[str]:
-        """Extract strong text."""
-        return [match.group(1) or match.group(2) for match in self.strong_pattern.finditer(content)]
-
-    def _extract_metadata(self, content: str) -> Dict:
-        """Extract YAML frontmatter if present."""
-        metadata = {}
-        # Look for YAML frontmatter between --- markers
-        frontmatter_pattern = re.compile(r'^---\s*\n(.*?)\n---\s*\n', re.DOTALL)
-        match = frontmatter_pattern.match(content)
-        if match:
-            # Parse simple key-value pairs
-            for line in match.group(1).split('\n'):
-                if ':' in line:
-                    key, value = line.split(':', 1)
-                    metadata[key.strip()] = value.strip()
-        return metadata
-
-    def _generate_toc(self, headers: List[Tuple[int, str]]) -> List[Dict]:
-        """Generate a table of contents from headers."""
-        toc = []
-        for level, text in headers:
-            # Create a slug for the header (simplified version)
-            slug = re.sub(r'[^\w\s-]', '', text.lower())
-            slug = re.sub(r'[-\s]+', '-', slug).strip('-')
-            toc.append({
-                'level': level,
-                'text': text,
-                'slug': slug
-            })
-        return toc

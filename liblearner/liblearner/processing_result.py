@@ -42,6 +42,11 @@ class MarkdownProcessingResult(ProcessingResult):
     """Result object for Markdown processing."""
     sections: List[Dict] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
+    df: Any = field(default=None)
+
+    def to_dataframe(self):
+        """Convert the processing result to a pandas DataFrame."""
+        return self.df
 
 @dataclass
 class JavaScriptProcessingResult(ProcessingResult):

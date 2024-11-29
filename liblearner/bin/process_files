@@ -123,8 +123,8 @@ def main():
     registry.register_processor(ShellProcessor())
     registry.register_processor(JupyterProcessor())
     registry.register_processor(YAMLProcessor())
+    registry.register_processor(MarkdownProcessor())  # Enable Markdown processor
     #@TODO: Build each processor slowly
-    # registry.register_processor(MarkdownProcessor())
     # registry.register_processor(JavaScriptProcessor())
     # registry.register_processor(JSONProcessor())
     
