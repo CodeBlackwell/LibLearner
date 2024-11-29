@@ -200,3 +200,16 @@ def test_multiple_files_processing(javascript_processor, tmp_path):
     classes = javascript_processor.results_df[javascript_processor.results_df["processor_type"] == "class"]
     assert "File1Class" in classes["name"].values
     assert "File2Class" in classes["name"].values
+
+def test_import_export_statements(javascript_processor, create_temp_js):
+    """Test processing of import and export statements."""
+    content = '''
+    export * from "d3-array";
+    import assert from "assert";
+    import {readdir, readFile, stat} from "fs/promises";
+    '''
+    js_file = create_temp_js(content)
+    result = javascript_processor.process_file(str(js_file))
+    
+    # Check for errors in processing
+    assert not result.errors, f"Errors found: {result.errors}"

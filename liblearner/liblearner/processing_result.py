@@ -53,7 +53,13 @@ class JavaScriptProcessingResult(ProcessingResult):
     """Result object for JavaScript processing."""
     functions: List[Dict] = field(default_factory=list)
     classes: List[Dict] = field(default_factory=list)
+    imports: List[Dict] = field(default_factory=list)
     exports: List[Dict] = field(default_factory=list)
+    df: Any = field(default=None)
+
+    def to_dataframe(self):
+        """Convert the processing result to a pandas DataFrame."""
+        return self.df
 
 @dataclass
 class ShellProcessingResult(ProcessingResult):

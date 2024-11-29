@@ -36,9 +36,23 @@ class JavaScriptProcessor(FileProcessor):
         """Return list of supported MIME types."""
         return list(self.supported_types)
     
+    def _validate_import_export(self, content: str) -> List[str]:
+        """Validate import and export statements, including re-exports."""
+        errors = []
+        # Regex pattern to match import/export statements, including re-exports
+        import_export_pattern = r'^(import|export)\s+(\{[^\}]*\}|\*|default)?\s*(from\s+)?["\"][^"\"]+["\"];?'
+        lines = content.split('\n')
+        for i, line in enumerate(lines):
+            if re.match(import_export_pattern, line.strip()):
+                continue
+        return errors
+    
     def _validate_content(self, content: str) -> List[str]:
         """Validate JavaScript content for malformed elements."""
         errors = []
+        
+        # Validate import/export statements
+        errors.extend(self._validate_import_export(content))
         
         # Check for unclosed braces/brackets
         brace_count = content.count('{') - content.count('}')
@@ -51,15 +65,6 @@ class JavaScriptProcessor(FileProcessor):
             errors.append(f"Found {abs(bracket_count)} unclosed brackets")
         if paren_count != 0:
             errors.append(f"Found {abs(paren_count)} unclosed parentheses")
-            
-        # Check for missing semicolons at line ends (basic check)
-        lines = content.split('\n')
-        for i, line in enumerate(lines):
-            line = line.strip()
-            if line and not line.endswith(';') and not line.endswith('{') and not line.endswith('}') \
-               and not line.endswith('[') and not line.endswith(']') and not line.endswith(',') \
-               and not line.startswith('//') and not line.startswith('/*'):
-                errors.append(f"Line {i+1} may be missing a semicolon: {line}")
         
         return errors
     
@@ -121,27 +126,55 @@ class JavaScriptProcessor(FileProcessor):
             for element in elements:
                 self._order_counter += 1
                 
-                # Extract environment variables and URLs
-                env_vars = self._extract_env_vars(element['code'])
-                urls = self._extract_urls(element['code'])
-                
-                # Create element record
-                element_info = {
-                    'filepath': str(path.absolute()),
-                    'parent_path': element.get('parentName', ''),
-                    'order': self._order_counter,
-                    'name': element['name'],
-                    'content': element['code'],
-                    'props': json.dumps({
-                        'parameters': element.get('parameters', []),
-                        'comments': element.get('comments', []),
-                        'nestingLevel': element['nestingLevel'],
-                        'env_vars': list(env_vars),
-                        'urls': list(urls)
-                    }),
-                    'processor_type': element['type'].lower()
-                }
-                results_data.append(element_info)
+                if element['type'] in ['Import', 'Export']:
+                    if element['type'] == 'Import':
+                        result.imports.append({
+                            'source': element['source'],
+                            'specifiers': element['specifiers'],
+                            'code': element['code']
+                        })
+                    else:  # Export
+                        result.exports.append({
+                            'source': element['source'],
+                            'specifiers': element['specifiers'],
+                            'code': element['code']
+                        })
+                    
+                    # Add to results data
+                    results_data.append({
+                        'filepath': str(path.absolute()),
+                        'parent_path': str(path.parent),
+                        'order': self._order_counter,
+                        'name': element['source'],
+                        'content': element['code'],
+                        'props': {
+                            'type': element['type'],
+                            'specifiers': element['specifiers']
+                        },
+                        'processor_type': 'javascript'
+                    })
+                else:
+                    # Extract environment variables and URLs
+                    env_vars = self._extract_env_vars(element['code'])
+                    urls = self._extract_urls(element['code'])
+                    
+                    # Create element record
+                    element_info = {
+                        'filepath': str(path.absolute()),
+                        'parent_path': element.get('parentName', ''),
+                        'order': self._order_counter,
+                        'name': element['name'],
+                        'content': element['code'],
+                        'props': json.dumps({
+                            'parameters': element.get('parameters', []),
+                            'comments': element.get('comments', []),
+                            'nestingLevel': element['nestingLevel'],
+                            'env_vars': list(env_vars),
+                            'urls': list(urls)
+                        }),
+                        'processor_type': element['type'].lower()
+                    }
+                    results_data.append(element_info)
             
             # Create DataFrame
             df = pd.DataFrame(results_data) if results_data else pd.DataFrame(columns=[

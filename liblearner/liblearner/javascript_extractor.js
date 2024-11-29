@@ -20,17 +20,40 @@ const argv = yargs(hideBin(process.argv))
 function processFile(filePath) {
   try {
     const code = fs.readFileSync(filePath, 'utf8');
-    const ast = esprima.parseScript(code, { 
+    const ast = esprima.parseModule(code, { 
       range: true, 
       comment: true,
-      attachComment: true 
+      attachComment: true,
+      sourceType: 'module'
     });
     const records = [];
     const stack = [];
 
     estraverse.traverse(ast, {
       enter: function (node, parent) {
-        if (node.type === 'ClassDeclaration') {
+        if (node.type === 'ImportDeclaration') {
+          records.push({
+            type: 'Import',
+            source: node.source.value,
+            specifiers: node.specifiers.map(spec => ({
+              type: spec.type,
+              name: spec.local ? spec.local.name : null,
+              imported: spec.imported ? spec.imported.name : null
+            })),
+            code: code.substring(node.range[0], node.range[1])
+          });
+        } else if (node.type === 'ExportNamedDeclaration' || node.type === 'ExportAllDeclaration') {
+          records.push({
+            type: 'Export',
+            source: node.source ? node.source.value : null,
+            specifiers: node.specifiers ? node.specifiers.map(spec => ({
+              type: spec.type,
+              name: spec.local ? spec.local.name : null,
+              exported: spec.exported ? spec.exported.name : null
+            })) : [],
+            code: code.substring(node.range[0], node.range[1])
+          });
+        } else if (node.type === 'ClassDeclaration') {
           stack.push({ type: 'Class', name: node.id.name });
           const record = {
             type: 'Class',
