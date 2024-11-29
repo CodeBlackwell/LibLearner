@@ -140,18 +140,21 @@ class MarkdownProcessor(FileProcessor):
                 parsed = frontmatter.parse(content)
                 frontmatter_data = parsed[0] if parsed and len(parsed) > 0 else {}
                 content = parsed[1] if parsed and len(parsed) > 1 else content
+                # Store frontmatter data directly in result.metadata
+                result.metadata = frontmatter_data
             except Exception as e:
+                error_msg = f"Failed to parse frontmatter: {str(e)}"
                 logger.warning(f"Failed to parse frontmatter in {file_path}: {e}")
-                frontmatter_data = {}
+                result.metadata = {}
+                result.errors.append(error_msg)
             
-            # Store file info with frontmatter
+            # Store file info
             result.file_info = {
                 'name': path.name,
                 'path': str(path.absolute()),
                 'size': path.stat().st_size,
                 'last_modified': path.stat().st_mtime,
-                'type': 'markdown',
-                'frontmatter': frontmatter_data
+                'type': 'markdown'
             }
             
             # Validate content for malformed elements
