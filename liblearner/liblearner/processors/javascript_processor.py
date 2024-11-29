@@ -127,29 +127,39 @@ class JavaScriptProcessor(FileProcessor):
                 self._order_counter += 1
                 
                 if element['type'] in ['Import', 'Export']:
+                    record = {
+                        'type': element['type'],
+                        'code': element['code']
+                    }
+                    
+                    # Handle optional fields
+                    if 'source' in element:
+                        record['source'] = element['source']
+                    if 'specifiers' in element:
+                        record['specifiers'] = element['specifiers']
+                    if 'dynamic' in element:
+                        record['dynamic'] = element['dynamic']
+                    if 'meta_usage' in element:
+                        record['meta_usage'] = element['meta_usage']
+                    
+                    # Add to appropriate list
                     if element['type'] == 'Import':
-                        result.imports.append({
-                            'source': element['source'],
-                            'specifiers': element['specifiers'],
-                            'code': element['code']
-                        })
-                    else:  # Export
-                        result.exports.append({
-                            'source': element['source'],
-                            'specifiers': element['specifiers'],
-                            'code': element['code']
-                        })
+                        result.imports.append(record)
+                    else:
+                        result.exports.append(record)
                     
                     # Add to results data
                     results_data.append({
                         'filepath': str(path.absolute()),
                         'parent_path': str(path.parent),
                         'order': self._order_counter,
-                        'name': element['source'],
+                        'name': element.get('source', 'dynamic_import' if element.get('dynamic') else 'meta_import' if element.get('meta_usage') else 'unknown'),
                         'content': element['code'],
                         'props': {
                             'type': element['type'],
-                            'specifiers': element['specifiers']
+                            'specifiers': element.get('specifiers', []),
+                            'dynamic': element.get('dynamic', False),
+                            'meta_usage': element.get('meta_usage', False)
                         },
                         'processor_type': 'javascript'
                     })
