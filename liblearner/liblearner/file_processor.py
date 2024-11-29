@@ -167,13 +167,16 @@ class ProcessorRegistry:
         """Get appropriate processor for a file."""
         try:
             mime_type = self._detector.detect_type(file_path)
+            self._debug(f"Detected MIME type for {file_path}: {mime_type}")
             
             # For text/plain files, check extension first. Many files return text/plain
             # each extension that potentially does requires a different processor and condition.
             if mime_type == 'text/plain':
                 ext = Path(file_path).suffix.lower()
+                self._debug(f"File has extension: {ext}")
                 if ext == '.py':
                     mime_type = 'text/x-python'
+                    self._debug(f"Treating {file_path} as Python file")
                 elif ext in ['.yaml', '.yml']:
                     mime_type = 'text/x-yaml'
                 elif ext == '.json':
@@ -353,13 +356,26 @@ class ProcessorRegistry:
             
             # Skip if current directory matches any glob pattern
             if any(Path(root).match(pattern) for pattern in glob_patterns):
+                self._debug(f"Skipping ignored directory: {root}")
                 continue
             
+            self._debug(f"Scanning directory: {root}")
             for file in files:
                 file_path = os.path.join(root, file)
-                result = self.process_file(file_path)
-                if result and result.is_valid():
-                    results[rel_path].append(result)
+                self._debug(f"Found file: {file_path}")
+                
+                # Try to get processor first to check if file type is supported
+                processor = self.get_processor(file_path)
+                if processor:
+                    self._debug(f"Found processor for {file_path}: {type(processor).__name__}")
+                    result = self.process_file(file_path)
+                    if result and result.is_valid():
+                        self._debug(f"Successfully processed {file_path}")
+                        results[rel_path].append(result)
+                    else:
+                        self._debug(f"Failed to process {file_path}")
+                else:
+                    self._debug(f"No processor found for {file_path}")
         
         return dict(results)
 

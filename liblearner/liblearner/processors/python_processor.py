@@ -37,6 +37,7 @@ class PythonProcessor(FileProcessor):
             'application/x-python-code',
             'text/x-python-executable'  # For .pyw files
         }
+        self._all_results = []  # Store all results to combine later
 
     def get_supported_types(self) -> List[str]:
         """Return list of supported MIME types."""
@@ -95,15 +96,18 @@ class PythonProcessor(FileProcessor):
             result.errors.append(error_msg)
             logger.error(error_msg)
 
-        # Create DataFrame from results data
+        # Store results data for later DataFrame creation
         if results_data:
-            self.results_df = pd.DataFrame(results_data)
-            # Add file info to each row
-            self.results_df['filepath'] = str(path.absolute())
-            self.results_df['type'] = 'python'  # Use a consistent type name
-            logger.debug(f"Created DataFrame with {len(results_data)} rows")
-        else:
-            self.results_df = pd.DataFrame()
+            # Add file info to each result
+            for data in results_data:
+                data['filepath'] = str(path.absolute())
+                data['type'] = 'python'  # Use a consistent type name
+            self._all_results.extend(results_data)
+            logger.debug(f"Added {len(results_data)} rows from {file_path}")
+            
+            # Update the combined DataFrame
+            self.results_df = pd.DataFrame(self._all_results)
+            
         return result
 
     def _process_node(self, node: ast.AST, result: PythonProcessingResult, results_data: List[Dict], file_path: str) -> None:
