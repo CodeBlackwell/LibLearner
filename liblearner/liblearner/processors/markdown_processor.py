@@ -85,29 +85,36 @@ class MarkdownProcessor(FileProcessor):
         errors = []
         
         # Check for unclosed code blocks
-        code_block_starts = len(re.findall(r'```\w*\n', content))
-        code_block_ends = len(re.findall(r'\n```', content))
-        if code_block_starts != code_block_ends:
-            errors.append("Found unclosed code block")
-            
+        code_blocks = re.findall(r'```[^\n]*\n(?:(?!```).)*(?:```)?', content, re.DOTALL)
+        for block in code_blocks:
+            if not block.strip().endswith('```'):
+                errors.append("Found unclosed code block")
+                break
+        
         # Check for unclosed links
-        link_pattern = r'\[([^\]]+)(?!\])'
-        unclosed_links = re.findall(link_pattern, content)
-        if unclosed_links:
-            errors.append(f"Found unclosed links: {', '.join(unclosed_links)}")
-            
-        # Check for unclosed blockquotes (basic check)
+        # Count opening and closing brackets to handle nested brackets
+        link_text = re.findall(r'\[([^\[\]]*)\](?!\()', content)
+        for text in link_text:
+            if '[' in text or ']' in text:
+                errors.append(f"Found unclosed links: {text}")
+        
+        # Check for unclosed blockquotes
         lines = content.split('\n')
         in_blockquote = False
-        for i, line in enumerate(lines):
-            if line.strip().startswith('>'):
+        empty_lines = 0
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith('>'):
                 in_blockquote = True
-            elif in_blockquote and line.strip() and not line.strip().startswith('>'):
-                if i + 1 < len(lines) and lines[i + 1].strip().startswith('>'):
-                    continue
-                errors.append("Found unclosed blockquote")
-                break
-                
+                empty_lines = 0
+            elif in_blockquote:
+                if not stripped:
+                    empty_lines += 1
+                elif empty_lines > 1 and not stripped.startswith('>'):
+                    in_blockquote = False
+                elif not stripped.startswith('>') and empty_lines == 0:
+                    in_blockquote = False
+        
         return errors
 
     def process_file(self, file_path: str) -> MarkdownProcessingResult:

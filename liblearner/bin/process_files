@@ -47,7 +47,10 @@ def parse_arguments():
     if args.output is None:
         target_name = os.path.basename(os.path.abspath(args.input_path))
         args.output = f"./extracted_{target_name}"
-    
+
+    # Ensure the output directory is unique
+    args.output = get_unique_output_dir(args.output)
+
     return args
 
 def log_error(file_path, error_message):
@@ -110,6 +113,15 @@ def write_dataframes_to_csv(dataframes, output_dir, base_name="results"):
             df_with_type.to_csv(type_path, index=False)
     
     return combined_path
+
+def get_unique_output_dir(base_dir):
+    """Generate a unique directory name by appending a numeric counter."""
+    counter = 1
+    unique_dir = base_dir
+    while os.path.exists(unique_dir):
+        unique_dir = f"{base_dir}_{counter}"
+        counter += 1
+    return unique_dir
 
 def main():
     args = parse_arguments()
