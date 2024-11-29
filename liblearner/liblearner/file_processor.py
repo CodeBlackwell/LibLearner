@@ -75,7 +75,9 @@ class FileTypeDetector:
             '.json': 'application/json',
             '.yaml': 'text/x-yaml',
             '.yml': 'text/x-yaml',
-            '.js': 'application/javascript'
+            '.js': 'application/javascript',
+            '.sh': 'application/x-shellscript',
+            '.bash': 'application/x-shellscript'
         }
     
     def detect_type(self, file_path: str) -> str:
@@ -112,6 +114,8 @@ class FileTypeDetector:
                 return 'text/x-yaml'
             if ext == '.ipynb':
                 return 'application/x-ipynb+json'
+            if ext in ['.sh', '.bash']:
+                return 'application/x-shellscript'
             return 'text/plain'
 
         # Try python-magic for more accurate detection
@@ -203,6 +207,8 @@ class ProcessorRegistry:
                     mime_type = 'application/javascript'
                 elif ext == '.ipynb':
                     mime_type = 'application/x-ipynb+json'
+                elif ext in ['.sh', '.bash']:
+                    mime_type = 'application/x-shellscript'
                 else:
                     self._debug(f"Skipping unsupported text file: {file_path}")
                     return None

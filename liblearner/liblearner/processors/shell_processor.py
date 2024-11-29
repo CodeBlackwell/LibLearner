@@ -100,7 +100,13 @@ class ShellProcessor(FileProcessor):
             df = df.rename(columns={'type': 'processor_type'})
             column_order = ['filepath', 'parent_path', 'order', 'name', 
                           'content', 'props', 'processor_type']
-            self.results_df = df[column_order]
+            df = df[column_order]
+            
+            # Concatenate with existing results if any
+            if hasattr(self, 'results_df') and not self.results_df.empty:
+                self.results_df = pd.concat([self.results_df, df], ignore_index=True)
+            else:
+                self.results_df = df
             
         return result
         
