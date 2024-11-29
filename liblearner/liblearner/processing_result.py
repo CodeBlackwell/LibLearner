@@ -49,3 +49,25 @@ class JavaScriptProcessingResult(ProcessingResult):
     functions: List[Dict] = field(default_factory=list)
     classes: List[Dict] = field(default_factory=list)
     exports: List[Dict] = field(default_factory=list)
+
+@dataclass
+class ShellProcessingResult(ProcessingResult):
+    """Result object for shell script processing.
+    
+    Stores structured information extracted from shell scripts including:
+    - Functions
+    - Variables
+    - Aliases
+    - Source/Include statements
+    - Comments and documentation
+    """
+    functions: List[Dict] = field(default_factory=list)
+    variables: List[Dict] = field(default_factory=list)
+    aliases: List[Dict] = field(default_factory=list)
+    sources: List[Dict] = field(default_factory=list)
+    errors: List[str] = field(default_factory=list)
+    file_info: Dict = field(default_factory=dict)
+    
+    def is_valid(self) -> bool:
+        """Check if the processing result is valid."""
+        return True  # Shell scripts can be valid even without functions/variables

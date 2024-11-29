@@ -13,7 +13,8 @@ from liblearner.processors import (
     YAMLProcessor,
     MarkdownProcessor,
     JavaScriptProcessor,
-    JSONProcessor
+    JSONProcessor,
+    ShellProcessor
 )
 
 def parse_arguments():
@@ -119,6 +120,7 @@ def main():
     # Register available processors and set verbose mode
     registry.set_verbose(args.verbose)
     registry.register_processor(PythonProcessor())
+    registry.register_processor(ShellProcessor())
     #@TODO: Build each processor slowly
     # registry.register_processor(JupyterProcessor())
     # registry.register_processor(YAMLProcessor())
