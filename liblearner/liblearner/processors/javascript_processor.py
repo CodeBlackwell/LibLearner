@@ -112,24 +112,34 @@ class JavaScriptProcessor(FileProcessor):
             
             # Get the path to the JavaScript extractor script
             extractor_path = os.path.join(os.path.dirname(__file__), '../javascript_extractor.js')
-            logger.debug(f"Using extractor at: {extractor_path}")
+            if self.debug:
+                logger.debug(f"Using extractor at: {extractor_path}")
             
             # Run the JavaScript extractor as a subprocess
-            logger.debug(f"Running extractor on file: {file_path}")
+            if self.debug:
+                logger.debug(f"Running extractor on file: {file_path}")
+                
+            cmd = ['node', extractor_path, '--path', file_path]
+            if self.debug:
+                cmd.append('--debug')
+                
             output = subprocess.check_output(
-                ['node', extractor_path, '--path', file_path],
+                cmd,
                 universal_newlines=True
             )
             
             # Parse the JSON output
-            logger.debug(f"Extractor output: {output}")
+            if self.debug:
+                logger.debug(f"Extractor output: {output}")
             elements = json.loads(output)
-            logger.debug(f"Parsed {len(elements)} elements")
+            if self.debug:
+                logger.debug(f"Parsed {len(elements)} elements")
             
             # Process elements and create records
             for element in elements:
                 self._order_counter += 1
-                logger.debug(f"Processing element: type={element['type']}, name={element.get('name', 'unnamed')}, parentName={element.get('parentName', 'none')}")
+                if self.debug:
+                    logger.debug(f"Processing element: type={element['type']}, name={element.get('name', 'unnamed')}, parentName={element.get('parentName', 'none')}")
                 
                 if element['type'] in ['Import', 'Export']:
                     record = {

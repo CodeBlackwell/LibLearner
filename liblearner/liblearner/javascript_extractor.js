@@ -13,9 +13,21 @@ const argv = yargs(hideBin(process.argv))
     description: 'Specify the path to the file or directory',
     type: 'string',
   })
+  .option('debug', {
+    alias: 'd',
+    description: 'Enable debug logging',
+    type: 'boolean',
+    default: false
+  })
   .help()
   .alias('help', 'h')
   .argv;
+
+function debugLog(message) {
+  if (argv.debug) {
+    console.error(`[DEBUG] ${message}`);
+  }
+}
 
 function processFile(filePath) {
   try {
@@ -33,7 +45,7 @@ function processFile(filePath) {
     // First pass: Find all classes and functions
     walk.simple(ast, {
       ClassDeclaration(node) {
-        console.error(`Found class: ${node.id.name}`);
+        debugLog(`Found class: ${node.id.name}`);
         stack.push({ type: 'Class', name: node.id.name });
         const record = {
           type: 'Class',
@@ -43,13 +55,13 @@ function processFile(filePath) {
           code: code.substring(node.start, node.end),
           nestingLevel: stack.length - 1,
         };
-        console.error(`Adding class record: ${JSON.stringify(record)}`);
+        debugLog(`Adding class record: ${JSON.stringify(record)}`);
         records.push(record);
 
         // Process methods immediately after class declaration
         node.body.body.forEach(member => {
           if (member.type === 'MethodDefinition') {
-            console.error(`Found method: ${member.key.name}, stack: ${JSON.stringify(stack)}`);
+            debugLog(`Found method: ${member.key.name}, stack: ${JSON.stringify(stack)}`);
             const record = {
               type: 'Method',
               name: member.key.name,
@@ -59,7 +71,7 @@ function processFile(filePath) {
               code: code.substring(member.start, member.end),
               nestingLevel: stack.length
             };
-            console.error(`Adding method record: ${JSON.stringify(record)}`);
+            debugLog(`Adding method record: ${JSON.stringify(record)}`);
             records.push(record);
           }
         });
