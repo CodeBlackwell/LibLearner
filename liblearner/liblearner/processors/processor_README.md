@@ -96,12 +96,166 @@ def process_file(self, file_path: str) -> YourProcessingResult:
         df = df.rename(columns={'type': 'processor_type'})
         column_order = ['filepath', 'parent_path', 'order', 'name', 
                        'content', 'props', 'processor_type']
-        self.results_df = df[column_order]
+        df = df[column_order]
+        
+        # IMPORTANT: Concatenate with existing results
+        if hasattr(self, 'results_df') and not self.results_df.empty:
+            self.results_df = pd.concat([self.results_df, df], ignore_index=True)
+        else:
+            self.results_df = df
 
     return result
 ```
 
-### 4. Implement Processing Logic
+### 4. MIME Type Support
+
+Proper MIME type support is critical for file detection. Follow these steps:
+
+1. **Declare All MIME Types**:
+   ```python
+   self.supported_types = {
+       'text/x-yourtype',
+       'application/x-yourtype',
+       'text/x-alternative',
+       'application/x-alternative'
+   }
+   ```
+
+2. **Update FileTypeDetector**:
+   Ensure your file extensions are mapped in `file_processor.py`:
+   ```python
+   self._extension_mime_types = {
+       '.yourext': 'application/x-yourtype',
+       '.altext': 'application/x-yourtype'
+   }
+   ```
+
+3. **Handle Empty Files**:
+   Add extension handling for empty files:
+   ```python
+   if ext in ['.yourext', '.altext']:
+       return 'application/x-yourtype'
+   ```
+
+4. **Text File Handling**:
+   Add handling for text/plain detection:
+   ```python
+   elif ext in ['.yourext', '.altext']:
+       mime_type = 'application/x-yourtype'
+   ```
+
+### 5. Results Management
+
+Proper results management is essential:
+
+1. **Initialize Results**:
+   ```python
+   def __init__(self):
+       super().__init__()
+       self.results_df = pd.DataFrame()  # Empty DataFrame
+   ```
+
+2. **Accumulate Results**:
+   - Never overwrite `results_df`
+   - Always concatenate new results
+   - Preserve order of discovery
+   - Maintain consistent column structure
+
+3. **Reset State**:
+   ```python
+   def process_file(self, file_path: str):
+       self._order_counter = 0  # Reset counter
+       self._current_path = []  # Reset path tracking
+   ```
+
+4. **Track Order**:
+   ```python
+   self._order_counter += 1
+   element_info['order'] = self._order_counter
+   ```
+
+### 6. Registration
+
+Proper processor registration requires multiple steps:
+
+1. **Update __init__.py**:
+   ```python
+   from .your_processor import YourProcessor
+   
+   __all__ = [
+       'YourProcessor',
+       # ... other processors
+   ]
+   ```
+
+2. **Register in process_files**:
+   ```python
+   registry.register_processor(YourProcessor())
+   ```
+
+3. **Verify Registration**:
+   - Check debug output for MIME type registration
+   - Verify processor is found for your file type
+   - Ensure files are being processed
+
+### 7. Testing Strategy
+
+Create comprehensive tests:
+
+1. **Test Files**:
+   - Create multiple test files
+   - Include different usage patterns
+   - Test edge cases and complex scenarios
+
+2. **MIME Type Testing**:
+   ```python
+   def test_mime_type_detection(self):
+       detector = FileTypeDetector()
+       assert detector.detect_type('test.yourext') == 'application/x-yourtype'
+   ```
+
+3. **Results Testing**:
+   ```python
+   def test_results_accumulation(self):
+       processor = YourProcessor()
+       processor.process_file('file1.yourext')
+       len1 = len(processor.results_df)
+       processor.process_file('file2.yourext')
+       len2 = len(processor.results_df)
+       assert len2 > len1  # Results should accumulate
+   ```
+
+4. **Edge Cases**:
+   - Empty files
+   - Malformed content
+   - Missing dependencies
+   - Nested structures
+   - Large files
+
+### 8. Common Pitfalls
+
+1. **Results Overwriting**:
+   - ❌ `self.results_df = new_df`
+   - ✓ Use `pd.concat()` to append results
+
+2. **MIME Type Mismatches**:
+   - ❌ Inconsistent MIME types across detection methods
+   - ✓ Align FileTypeDetector with processor's supported types
+
+3. **State Management**:
+   - ❌ Forgetting to reset counters/trackers
+   - ✓ Reset all state at start of processing
+
+4. **Missing Registration**:
+   - ❌ Processor not in __init__.py
+   - ❌ Processor not registered with registry
+   - ✓ Complete all registration steps
+
+5. **Incomplete Error Handling**:
+   - ❌ Failing on recoverable errors
+   - ✓ Catch and log errors, continue processing
+
+### 9. Implement Processing Logic
 
 Develop methods to process your file type:
 
@@ -126,7 +280,7 @@ def _process_content(self, content: str, result: YourProcessingResult,
         results_data.append(element_info)
 ```
 
-### 5. DataFrame Structure
+### 10. DataFrame Structure
 
 Ensure your processor outputs these standardized columns:
 - `filepath`: Absolute path to the source file
@@ -137,7 +291,7 @@ Ensure your processor outputs these standardized columns:
 - `props`: Element-specific properties as string
 - `processor_type`: Type of element (class, function, etc.)
 
-### 6. Best Practices
+### 11. Best Practices
 
 1. **Error Handling**
    - Catch and log all exceptions
@@ -159,7 +313,7 @@ Ensure your processor outputs these standardized columns:
    - Minimize memory usage
    - Use appropriate data structures
 
-### 7. Testing
+### 12. Testing
 
 Create tests in `tests/processors/`:
 1. Test file type detection
@@ -168,7 +322,7 @@ Create tests in `tests/processors/`:
 4. Test DataFrame structure
 5. Test nested element handling
 
-### 8. Registration
+### 13. Registration
 
 Register your processor in `bin/process_files`:
 
