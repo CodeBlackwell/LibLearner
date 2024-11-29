@@ -135,7 +135,7 @@ def main():
         
         # Collect all DataFrames from processors
         processor_dfs = defaultdict(list)
-        for processor in registry._processors.values():
+        for processor in registry.get_unique_processors():
             if not processor.results_df.empty:
                 proc_type = processor.get_supported_types()[0]  # Use first type as identifier
                 processor_dfs[proc_type].append(processor.results_df)

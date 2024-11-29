@@ -15,22 +15,11 @@ import pandas as pd
 from pathlib import Path
 from typing import List, Dict, Any
 from ..file_processor import FileProcessor
+from ..processing_result import PythonProcessingResult
 
 # Set up a logger for debug output
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-
-class PythonProcessingResult:
-    """Result object for Python processing."""
-
-    def __init__(self):
-        """Initialize the Python processing result."""
-        self.errors: List[str] = []
-        self.functions: List[Dict] = []
-        self.classes: List[Dict] = []
-        self.file_info: Dict[str, Any] = {}
-
 
 class PythonProcessor(FileProcessor):
     """Processor for Python source files."""
@@ -65,6 +54,7 @@ class PythonProcessor(FileProcessor):
             - functions: List of extracted function information
             - classes: List of extracted class information 
             - errors: List of any errors encountered
+            - file_info: Dictionary with file metadata
         """
         path = Path(file_path)
         result = PythonProcessingResult()

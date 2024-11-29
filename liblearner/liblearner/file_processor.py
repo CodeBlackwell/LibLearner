@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 from collections import defaultdict
 import pandas as pd
+from .processing_result import ProcessingResult
 
 # Default directories to ignore
 DEFAULT_IGNORE_DIRS = {"venv", ".git", "ds_venv", "dw_env", "__pycache__", ".venv", "*.egg-info"}
@@ -34,7 +35,7 @@ class FileProcessor(ABC):
         pass
     
     @abstractmethod
-    def process_file(self, file_path: str) -> Union[dict, str]:
+    def process_file(self, file_path: str) -> ProcessingResult:
         """
         Process a file and extract information.
         
@@ -42,10 +43,7 @@ class FileProcessor(ABC):
             file_path: Path to the file to process
             
         Returns:
-            Either:
-            - Dictionary containing extracted information for function-based processors
-            - String path to the CSV file for cell-based processors
-            - None if processing failed
+            ProcessingResult containing extracted information
         """
         pass
 
@@ -129,10 +127,12 @@ class ProcessorRegistry:
     
     def __init__(self):
         """Initialize registry and file type detector."""
-        self._processors = {}
+        self._processors = {}  # MIME type -> processor mapping
+        self._unique_processors = set()  # Set of unique processor instances
         self._detector = FileTypeDetector()
         self._verbose = False
         self._results = defaultdict(lambda: defaultdict(pd.DataFrame))
+        self._processed_files = set()  # Track processed files by absolute path
     
     def set_verbose(self, verbose: bool) -> None:
         """Set verbose mode for debug output."""
@@ -141,7 +141,7 @@ class ProcessorRegistry:
     def _debug(self, message: str) -> None:
         """Print debug message if verbose mode is enabled."""
         if self._verbose:
-            print(f"DEBUG: {message}")
+            print(f"DEBUG: {message}", file=sys.stderr)
     
     def register_processor(self, processor: Union[Type[FileProcessor], FileProcessor]) -> None:
         """Register a processor for its supported MIME types.
@@ -150,13 +150,18 @@ class ProcessorRegistry:
             processor: Either a FileProcessor class or instance
         """
         if isinstance(processor, type):
-            processor_instance = processor()
-        else:
-            processor_instance = processor
-            
-        for mime_type in processor_instance.get_supported_types():
+            processor = processor()
+        
+        # Add to unique processors set
+        self._unique_processors.add(processor)
+        
+        for mime_type in processor.get_supported_types():
             self._debug(f"Registering processor for MIME type: {mime_type}")
-            self._processors[mime_type] = processor_instance
+            self._processors[mime_type] = processor
+
+    def get_unique_processors(self) -> List[FileProcessor]:
+        """Get list of unique processor instances."""
+        return list(self._unique_processors)
     
     def get_processor(self, file_path: str) -> Optional[FileProcessor]:
         """Get appropriate processor for a file."""
@@ -218,21 +223,31 @@ class ProcessorRegistry:
                 raise RuntimeError(f"Error determining processor for file {file_path}: {str(e)}")
             return None
     
-    def process_file(self, file_path: str) -> Optional[Union[dict, str]]:
+    def process_file(self, file_path: str) -> Optional[ProcessingResult]:
         """Process a single file using appropriate processor."""
+        abs_path = str(Path(file_path).resolve())
+        
+        # Check if file has already been processed
+        if abs_path in self._processed_files:
+            self._debug(f"Skipping already processed file: {file_path}")
+            return None
+            
         try:
             processor = self.get_processor(file_path)
         except Exception as e:
             self._debug(f"Error getting processor for {file_path}: {str(e)}")
             return None
+        
         if processor:
             try:
                 result = processor.process_file(file_path)
-                if result:
+                if result and result.is_valid():
                     # Store the dataframe in the results dictionary
                     file_type = self._detector.detect_type(file_path)
                     filename = os.path.basename(file_path)
                     self._results[file_type][filename] = processor.get_results_dataframe()
+                    # Mark file as processed
+                    self._processed_files.add(abs_path)
                 self._debug(f"Successfully processed {file_path}")
                 return result
             except Exception as e:
@@ -261,45 +276,39 @@ class ProcessorRegistry:
         os.makedirs(output_dir, exist_ok=True)
         
         if combined:
-            # Combine all dataframes into one
+            # Combine all DataFrames
             all_dfs = []
-            for file_type, file_dict in self._results.items():
-                for filename, df in file_dict.items():
-                    df = df.copy()
-                    df['file_type'] = file_type
-                    df['filename'] = filename
-                    all_dfs.append(df)
+            for file_type, files_dict in self._results.items():
+                for filename, df in files_dict.items():
+                    if not df.empty:
+                        df = df.copy()
+                        df['file_type'] = file_type
+                        df['filename'] = filename
+                        all_dfs.append(df)
             
             if all_dfs:
                 combined_df = pd.concat(all_dfs, ignore_index=True)
-                # Reorder columns to put file_type and filename first
-                cols = ['file_type', 'filename', 'type', 'name', 'content', 'props']
-                combined_df = combined_df[cols]
-                output_path = os.path.join(output_dir, 'all_results.csv')
+                output_path = os.path.join(output_dir, 'combined_results.csv')
                 combined_df.to_csv(output_path, index=False)
                 self._debug(f"Written combined results to {output_path}")
         else:
             # Write separate CSV for each file type
-            for file_type, file_dict in self._results.items():
-                file_dfs = []
-                for filename, df in file_dict.items():
-                    df = df.copy()
-                    df['filename'] = filename
-                    file_dfs.append(df)
+            for file_type, files_dict in self._results.items():
+                file_type_dfs = []
+                for filename, df in files_dict.items():
+                    if not df.empty:
+                        df = df.copy()
+                        df['filename'] = filename
+                        file_type_dfs.append(df)
                 
-                if file_dfs:
-                    file_type_df = pd.concat(file_dfs, ignore_index=True)
-                    # Reorder columns to put filename first
-                    cols = ['filename', 'type', 'name', 'content', 'props']
-                    file_type_df = file_type_df[cols]
-                    
-                    # Create a safe filename from the MIME type
+                if file_type_dfs:
+                    file_type_df = pd.concat(file_type_dfs, ignore_index=True)
                     safe_name = file_type.replace('/', '_').replace('+', '_')
                     output_path = os.path.join(output_dir, f'{safe_name}_results.csv')
                     file_type_df.to_csv(output_path, index=False)
                     self._debug(f"Written {file_type} results to {output_path}")
 
-    def process_directory(self, directory_path: str, ignore_dirs: Optional[List[str]] = None) -> Dict[str, List[Union[dict, str]]]:
+    def process_directory(self, directory_path: str, ignore_dirs: Optional[List[str]] = None) -> Dict[str, List[ProcessingResult]]:
         """
         Process all files in a directory recursively.
         
@@ -349,7 +358,7 @@ class ProcessorRegistry:
             for file in files:
                 file_path = os.path.join(root, file)
                 result = self.process_file(file_path)
-                if result:
+                if result and result.is_valid():
                     results[rel_path].append(result)
         
         return dict(results)
