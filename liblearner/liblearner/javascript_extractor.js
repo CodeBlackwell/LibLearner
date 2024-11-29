@@ -2,10 +2,10 @@
 
 const fs = require('fs');
 const path = require('path');
-const acorn = require('acorn');
+const parser = require('@babel/parser');
+const traverse = require('@babel/traverse').default;
 const yargs = require('yargs/yargs');
 const { hideBin } = require('yargs/helpers');
-const walk = require('acorn-walk');
 
 const argv = yargs(hideBin(process.argv))
   .option('path', {
@@ -32,19 +32,29 @@ function debugLog(message) {
 function processFile(filePath) {
   try {
     const code = fs.readFileSync(filePath, 'utf8');
-    const ast = acorn.parse(code, {
-      sourceType: 'module',
-      ecmaVersion: 'latest',
-      locations: true,
-      ranges: true,
-    });
-
     const records = [];
     const stack = [];
+    
+    // Use Babel parser with all modern features enabled
+    const ast = parser.parse(code, {
+      sourceType: 'module',
+      plugins: [
+        'importAssertions',
+        'importAttributes',
+        'topLevelAwait',
+        'classProperties',
+        'classPrivateProperties',
+        'classPrivateMethods',
+        'exportDefaultFrom',
+        'exportNamespaceFrom',
+        'dynamicImport',
+      ],
+    });
 
-    // First pass: Find all classes and functions
-    walk.simple(ast, {
-      ClassDeclaration(node) {
+    // Use Babel traverse for AST walking
+    traverse(ast, {
+      ClassDeclaration(path) {
+        const node = path.node;
         debugLog(`Found class: ${node.id.name}`);
         stack.push({ type: 'Class', name: node.id.name });
         const record = {
@@ -60,13 +70,13 @@ function processFile(filePath) {
 
         // Process methods immediately after class declaration
         node.body.body.forEach(member => {
-          if (member.type === 'MethodDefinition') {
+          if (member.type === 'ClassMethod') {
             debugLog(`Found method: ${member.key.name}, stack: ${JSON.stringify(stack)}`);
             const record = {
               type: 'Method',
               name: member.key.name,
               parentName: `Class:${node.id.name}`,
-              parameters: member.value.params.map(param => param.name),
+              parameters: member.params.map(param => param.name),
               comments: getComments(member, code),
               code: code.substring(member.start, member.end),
               nestingLevel: stack.length
@@ -78,7 +88,9 @@ function processFile(filePath) {
 
         stack.pop();
       },
-      FunctionDeclaration(node) {
+      
+      FunctionDeclaration(path) {
+        const node = path.node;
         const record = {
           type: 'Function',
           name: node.id ? node.id.name : 'anonymous',
@@ -93,17 +105,10 @@ function processFile(filePath) {
           stack.push({ type: 'Function', name: node.id.name });
         }
       },
-      'FunctionDeclaration:exit'(node) {
-        if (node.id) {
-          stack.pop();
-        }
-      },
-    });
 
-    // Second pass: Find imports and exports
-    walk.simple(ast, {
-      ImportDeclaration(node) {
-        records.push({
+      ImportDeclaration(path) {
+        const node = path.node;
+        let importInfo = {
           type: 'Import',
           source: node.source.value,
           specifiers: node.specifiers.map(spec => ({
@@ -112,17 +117,31 @@ function processFile(filePath) {
             imported: spec.imported ? spec.imported.name : null,
           })),
           code: code.substring(node.start, node.end),
-        });
+        };
+
+        // Handle import assertions/attributes if present
+        if (node.assertions && node.assertions.length > 0) {
+          importInfo.assertions = node.assertions.map(assert => ({
+            key: assert.key.name,
+            value: assert.value.value
+          }));
+        }
+
+        records.push(importInfo);
       },
-      ImportExpression(node) {
+
+      ImportExpression(path) {
+        const node = path.node;
         records.push({
           type: 'Import',
           dynamic: true,
-          source: node.source.type === 'Literal' ? node.source.value : null,
+          source: node.source.type === 'StringLiteral' ? node.source.value : null,
           code: code.substring(node.start, node.end),
         });
       },
-      MetaProperty(node) {
+
+      MetaProperty(path) {
+        const node = path.node;
         if (node.meta.name === 'import' && node.property.name === 'meta') {
           records.push({
             type: 'Import',
@@ -131,7 +150,9 @@ function processFile(filePath) {
           });
         }
       },
-      ExportNamedDeclaration(node) {
+
+      ExportNamedDeclaration(path) {
+        const node = path.node;
         records.push({
           type: 'Export',
           source: node.source ? node.source.value : null,
@@ -143,7 +164,38 @@ function processFile(filePath) {
           code: code.substring(node.start, node.end),
         });
       },
-      ExportAllDeclaration(node) {
+
+      ExportDefaultDeclaration(path) {
+        const node = path.node;
+        let exportValue = '';
+        if (node.declaration.type === 'ArrayExpression') {
+          exportValue = 'Array of configurations';
+          if (node.declaration.elements) {
+            exportValue = `Array of ${node.declaration.elements.length} configurations`;
+          }
+        } else if (node.declaration.type === 'ObjectExpression') {
+          exportValue = 'Configuration object';
+          if (node.declaration.properties) {
+            const props = node.declaration.properties
+              .map(p => p.key.name || p.key.value)
+              .filter(Boolean)
+              .join(', ');
+            exportValue = `Configuration object with properties: ${props}`;
+          }
+        } else if (node.declaration.type === 'Identifier') {
+          exportValue = node.declaration.name;
+        }
+        
+        records.push({
+          type: 'Export',
+          isDefault: true,
+          value: exportValue,
+          code: code.substring(node.start, node.end),
+        });
+      },
+
+      ExportAllDeclaration(path) {
+        const node = path.node;
         records.push({
           type: 'Export',
           source: node.source.value,
