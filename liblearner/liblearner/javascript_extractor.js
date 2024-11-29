@@ -30,6 +30,65 @@ function processFile(filePath) {
     const records = [];
     const stack = [];
 
+    // First pass: Find all classes and functions
+    walk.simple(ast, {
+      ClassDeclaration(node) {
+        console.error(`Found class: ${node.id.name}`);
+        stack.push({ type: 'Class', name: node.id.name });
+        const record = {
+          type: 'Class',
+          name: node.id.name,
+          parameters: [],
+          comments: getComments(node, code),
+          code: code.substring(node.start, node.end),
+          nestingLevel: stack.length - 1,
+        };
+        console.error(`Adding class record: ${JSON.stringify(record)}`);
+        records.push(record);
+
+        // Process methods immediately after class declaration
+        node.body.body.forEach(member => {
+          if (member.type === 'MethodDefinition') {
+            console.error(`Found method: ${member.key.name}, stack: ${JSON.stringify(stack)}`);
+            const record = {
+              type: 'Method',
+              name: member.key.name,
+              parentName: `Class:${node.id.name}`,
+              parameters: member.value.params.map(param => param.name),
+              comments: getComments(member, code),
+              code: code.substring(member.start, member.end),
+              nestingLevel: stack.length
+            };
+            console.error(`Adding method record: ${JSON.stringify(record)}`);
+            records.push(record);
+          }
+        });
+
+        stack.pop();
+      },
+      FunctionDeclaration(node) {
+        const record = {
+          type: 'Function',
+          name: node.id ? node.id.name : 'anonymous',
+          parameters: node.params.map(param => param.name),
+          comments: getComments(node, code),
+          code: code.substring(node.start, node.end),
+          nestingLevel: stack.length
+        };
+        records.push(record);
+        
+        if (node.id) {
+          stack.push({ type: 'Function', name: node.id.name });
+        }
+      },
+      'FunctionDeclaration:exit'(node) {
+        if (node.id) {
+          stack.pop();
+        }
+      },
+    });
+
+    // Second pass: Find imports and exports
     walk.simple(ast, {
       ImportDeclaration(node) {
         records.push({
@@ -80,64 +139,7 @@ function processFile(filePath) {
           code: code.substring(node.start, node.end),
         });
       },
-      ClassDeclaration(node) {
-        stack.push({ type: 'Class', name: node.id.name });
-        const record = {
-          type: 'Class',
-          name: node.id.name,
-          parameters: [],
-          comments: getComments(node, code),
-          code: code.substring(node.start, node.end),
-          nestingLevel: stack.length - 1,
-        };
-        records.push(record);
-      },
-      MethodDefinition(node) {
-        if (stack.length > 0) {
-          const className = stack[stack.length - 1].name;
-          const record = {
-            type: 'Function',
-            name: node.key.name,
-            parentName: `Class:${className}`,
-            parameters: node.value.params.map(param => param.name),
-            comments: getComments(node, code),
-            code: code.substring(node.start, node.end),
-            nestingLevel: stack.length,
-          };
-          records.push(record);
-        }
-      },
-      FunctionDeclaration(node) {
-        const record = {
-          type: 'Function',
-          name: node.id ? node.id.name : 'anonymous',
-          parameters: node.params.map(param => param.name),
-          comments: getComments(node, code),
-          code: code.substring(node.start, node.end),
-          nestingLevel: stack.length,
-        };
-        if (stack.length > 0) {
-          const parent = stack[stack.length - 1];
-          record.parentName = `${parent.type}:${parent.name}`;
-        }
-        records.push(record);
-
-        if (node.id) {
-          stack.push({ type: 'Function', name: node.id.name });
-        }
-      },
-      'ClassDeclaration:exit'(node) {
-        stack.pop();
-      },
-      'FunctionDeclaration:exit'(node) {
-        if (node.id) {
-          stack.pop();
-        }
-      },
     });
-
-    // Handle stack cleanup after traversal
-    stack.length = 0;
 
     return records;
   } catch (error) {

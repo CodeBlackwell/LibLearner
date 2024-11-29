@@ -112,19 +112,24 @@ class JavaScriptProcessor(FileProcessor):
             
             # Get the path to the JavaScript extractor script
             extractor_path = os.path.join(os.path.dirname(__file__), '../javascript_extractor.js')
+            logger.debug(f"Using extractor at: {extractor_path}")
             
             # Run the JavaScript extractor as a subprocess
+            logger.debug(f"Running extractor on file: {file_path}")
             output = subprocess.check_output(
                 ['node', extractor_path, '--path', file_path],
                 universal_newlines=True
             )
             
             # Parse the JSON output
+            logger.debug(f"Extractor output: {output}")
             elements = json.loads(output)
+            logger.debug(f"Parsed {len(elements)} elements")
             
             # Process elements and create records
             for element in elements:
                 self._order_counter += 1
+                logger.debug(f"Processing element: type={element['type']}, name={element.get('name', 'unnamed')}, parentName={element.get('parentName', 'none')}")
                 
                 if element['type'] in ['Import', 'Export']:
                     record = {
@@ -178,13 +183,16 @@ class JavaScriptProcessor(FileProcessor):
                         'props': json.dumps({
                             'parameters': element.get('parameters', []),
                             'comments': element.get('comments', []),
-                            'nestingLevel': element['nestingLevel'],
+                            'nestingLevel': element.get('nestingLevel', 0),
                             'env_vars': list(env_vars),
                             'urls': list(urls)
                         }),
                         'processor_type': element['type'].lower()
                     }
                     results_data.append(element_info)
+
+                    # We no longer need to add methods as separate function entries
+                    # since they are already documented as methods
             
             # Create DataFrame
             df = pd.DataFrame(results_data) if results_data else pd.DataFrame(columns=[

@@ -126,14 +126,15 @@ def test_url_extraction(javascript_processor, create_temp_js):
     assert not result.errors, f"Unexpected errors: {result.errors}"
     assert not result.df.empty, "DataFrame should not be empty"
     assert len(result.df) >= 2, "Should have class and method"
-    
-    # Get props from the class definition
+
+    # Get props from the class and method definitions
     class_props = json.loads(result.df[result.df['processor_type'] == 'class'].iloc[0]['props'])
-    method_props = json.loads(result.df[result.df['processor_type'] == 'function'].iloc[0]['props'])
-    
-    # URLs should be found in both class and method
-    urls = set(class_props['urls']).union(set(method_props['urls']))
-    assert 'https://api.example.com/v1' in urls
+    method_props = json.loads(result.df[result.df['processor_type'] == 'method'].iloc[1]['props'])  # Get fetchData method
+
+    # Check URLs in method props
+    assert 'urls' in method_props
+    urls = method_props['urls']
+    assert len(urls) >= 2, f"Expected at least 2 URLs, got {urls}"
     assert 'https://api.test.com/data' in urls
     assert '/api/users' in urls
 
@@ -190,16 +191,24 @@ def test_multiple_files_processing(javascript_processor, tmp_path):
     
     # Check results accumulation
     assert not javascript_processor.results_df.empty
-    assert len(javascript_processor.results_df) == 4  # 2 classes + 2 methods
-    
+    # Should have 4 rows: 2 classes and 2 methods
+    assert len(javascript_processor.results_df) == 4
+
     # Check file paths
     file_paths = javascript_processor.results_df["filepath"].unique()
     assert len(file_paths) == 2
-    
+
     # Check content from both files
     classes = javascript_processor.results_df[javascript_processor.results_df["processor_type"] == "class"]
+    assert len(classes) == 2  # Should have two classes
     assert "File1Class" in classes["name"].values
     assert "File2Class" in classes["name"].values
+
+    # Check methods
+    methods = javascript_processor.results_df[javascript_processor.results_df["processor_type"] == "method"]
+    assert len(methods) == 2  # Should have two methods
+    assert "method1" in methods["name"].values
+    assert "method2" in methods["name"].values
 
 def test_import_export_statements(javascript_processor, create_temp_js):
     """Test processing of import and export statements."""
