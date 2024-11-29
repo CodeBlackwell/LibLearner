@@ -100,23 +100,22 @@ class FileTypeDetector:
 
         # For empty files, use extension mapping or default to text/plain
         if os.path.getsize(file_path) == 0:
-            if ext == '.py':
-                return 'text/x-python'
-            if ext == '.pyw':
-                return 'text/x-python-executable'
-            if ext == '.md':
-                return 'text/markdown'
-            if ext == '.mdx':
-                return 'text/mdx'
-            if ext == '.js':
-                return 'text/javascript'
-            if ext in ['.yaml', '.yml']:
-                return 'text/x-yaml'
             if ext == '.ipynb':
                 return 'application/x-ipynb+json'
-            if ext in ['.sh', '.bash']:
+            elif ext in ['.sh', '.bash']:
                 return 'application/x-shellscript'
-            return 'text/plain'
+            elif ext == '.py':
+                return 'text/x-python'
+            elif ext == '.js':
+                return 'application/javascript'
+            elif ext == '.json':
+                return 'application/json'
+            elif ext in ['.yaml', '.yml']:
+                return 'text/x-yaml'
+            elif ext == '.md':
+                return 'text/markdown'
+            else:
+                return 'text/plain'
 
         # Try python-magic for more accurate detection
         try:

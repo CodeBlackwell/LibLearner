@@ -121,8 +121,9 @@ def main():
     registry.set_verbose(args.verbose)
     registry.register_processor(PythonProcessor())
     registry.register_processor(ShellProcessor())
+    registry.register_processor(JupyterProcessor())
     #@TODO: Build each processor slowly
-    # registry.register_processor(JupyterProcessor())
+
     # registry.register_processor(YAMLProcessor())
     # registry.register_processor(MarkdownProcessor())
     # registry.register_processor(JavaScriptProcessor())
