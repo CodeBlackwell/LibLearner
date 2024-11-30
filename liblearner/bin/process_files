@@ -137,9 +137,7 @@ def main():
     registry.register_processor(YAMLProcessor())
     registry.register_processor(MarkdownProcessor())  # Enable Markdown processor
     registry.register_processor(JavaScriptProcessor())
-    #@TODO: Build each processor slowly
-
-    # registry.register_processor(JSONProcessor())
+    registry.register_processor(JSONProcessor())
     
     # Process input path
     if os.path.isdir(args.input_path):

@@ -369,6 +369,54 @@ Register your processor in `bin/process_files`:
 registry.register_processor(YourProcessor())
 ```
 
+## Testing Guidelines
+
+### Test Location
+All processor tests should be placed in the `liblearner/tests/processors` directory. Follow this structure:
+
+```
+liblearner/
+├── tests/
+│   ├── processors/
+│   │   ├── test_json_processor.py
+│   │   ├── test_python_processor.py
+│   │   └── ...
+│   └── test_data/
+│       ├── json/
+│       ├── python/
+│       └── ...
+```
+
+### Test Requirements
+1. Each processor must have its own test file named `test_<processor_name>.py`
+2. Test data should be organized by type in `test_data/<type>/`
+3. Tests should cover:
+   - Valid file processing
+   - Invalid file handling
+   - Edge cases (empty files, large files)
+   - Different encodings
+   - Nested structures (if applicable)
+   - Error conditions
+
+### Example Test Structure
+```python
+def test_valid_file_processing():
+    """Test processing of valid files."""
+    pass
+
+def test_invalid_file_handling():
+    """Test handling of invalid files."""
+    pass
+
+def test_edge_cases():
+    """Test edge cases like empty files."""
+    pass
+
+def test_error_conditions():
+    """Test various error conditions."""
+    pass
+```
+
 ## Example Processor Types
 
 Common processor types include:
