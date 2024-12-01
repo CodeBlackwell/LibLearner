@@ -340,6 +340,7 @@ class ProcessorRegistry:
             Dictionary mapping relative paths to lists of processing results
         """
         results = defaultdict(list)
+        unprocessed_files = []  # Track files without processors
         
         # Split ignore patterns into exact matches and glob patterns
         exact_ignores = set()
@@ -393,6 +394,21 @@ class ProcessorRegistry:
                         self._debug(f"Failed to process {file_path}")
                 else:
                     self._debug(f"No processor found for {file_path}")
+                    # Add to unprocessed files list with file extension
+                    ext = Path(file_path).suffix
+                    unprocessed_files.append((file_path, ext))
+        
+        # Sort and group unprocessed files by extension
+        if unprocessed_files:
+            print("\nFiles without available processors:")
+            by_extension = defaultdict(list)
+            for file_path, ext in unprocessed_files:
+                by_extension[ext].append(file_path)
+            
+            for ext, files in sorted(by_extension.items()):
+                print(f"\n{ext} files ({len(files)}):")
+                for file_path in sorted(files):
+                    print(f"  {file_path}")
         
         return dict(results)
 
