@@ -47,11 +47,9 @@ def download_github_repo(url, target_dir):
         owner, repo = get_repo_info(url)
         print(f"Repository info - Owner: {owner}, Repo: {repo}")
         
-        # Create the extracted subdirectory
-        extracted_dir = os.path.join(target_dir, 'extracted')
-        resources_dir = target_dir
-        os.makedirs(extracted_dir, exist_ok=True)
-        print(f"Created/verified directories:\n  Target: {target_dir}\n  Extracted: {extracted_dir}")
+        # Create target directory
+        os.makedirs(target_dir, exist_ok=True)
+        print(f"Created/verified directory:\n  Target: {target_dir}")
         
         # Construct the zip download URL
         zip_url = f"https://github.com/{owner}/{repo}/archive/refs/heads/main.zip"
@@ -86,32 +84,36 @@ def download_github_repo(url, target_dir):
         
         if not os.path.exists(zip_path):
             raise Exception(f"Zip file was not created at {zip_path}")
-            
-        # Extract the zip file to the extracted subdirectory
-        print(f"Extracting files to: {resources_dir}")
+        
+        # Extract the zip file
+        print(f"Extracting files to: {target_dir}")
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             file_list = zip_ref.namelist()
             print(f"Zip contains {len(file_list)} files")
-            zip_ref.extractall(resources_dir)
+            zip_ref.extractall(target_dir)
         
         # Remove the zip file
         os.remove(zip_path)
         print("Removed temporary zip file")
         
-        # Find the unzipped directory (it might be named repo-main or repo-master)
-        unzipped_dir = [d for d in os.listdir(resources_dir) 
-                        if os.path.isdir(os.path.join(resources_dir, d)) and d.startswith(f"{repo}-")]
-        print(f"Found unzipped directories: {unzipped_dir}")
+        # Find the extracted directory (it might be named repo-main or repo-master)
+        extracted_dirs = [d for d in os.listdir(target_dir) 
+                        if os.path.isdir(os.path.join(target_dir, d)) and d.startswith(f"{repo}-")]
+        print(f"Found extracted directories: {extracted_dirs}")
         
-        if not unzipped_dir:
+        if not extracted_dirs:
             raise Exception("Could not find extracted repository directory")
         
-        repo_path = os.path.join(resources_dir, unzipped_dir[0])
-        if not os.path.exists(repo_path):
-            raise Exception(f"Expected repository path does not exist: {repo_path}")
-            
-        print(f"Repository extracted to: {repo_path}")
-        return repo_path
+        # Rename the extracted directory to just the repo name
+        old_path = os.path.join(target_dir, extracted_dirs[0])
+        new_path = os.path.join(target_dir, repo)
+        if os.path.exists(new_path):
+            import shutil
+            shutil.rmtree(new_path)
+        os.rename(old_path, new_path)
+        
+        print(f"Repository extracted to: {new_path}")
+        return new_path
         
     except requests.exceptions.RequestException as e:
         print(f"Error downloading repository: {str(e)}", file=sys.stderr)
@@ -198,13 +200,14 @@ def parse_arguments():
         description="Process files of different types and extract information."
     )
     parser.add_argument(
-        "input_path",
-        help="Path to file/directory to process, or GitHub repository URL"
+        "input_paths",
+        nargs='+',
+        help="One or more paths/URLs to process. Can be files, directories, or GitHub repository URLs"
     )
     parser.add_argument(
         "-o", "--output",
-        help="Output directory for results (default: ./resources/extracted/<target_name>)",
-        default=None
+        help="Output directory for results (default: ./resources)",
+        default="./resources"
     )
     parser.add_argument(
         "--ignore-dirs",
@@ -226,12 +229,12 @@ def parse_arguments():
     
     # Set default output directory if not specified
     if args.output is None:
-        if is_github_url(args.input_path):
-            _, repo = get_repo_info(args.input_path)
-            args.output = os.path.join(args.temp_dir, "extracted", f"{repo}-main")
+        if is_github_url(args.input_paths[0]):
+            _, repo = get_repo_info(args.input_paths[0])
+            args.output = os.path.join(args.temp_dir, f"{repo}-main")
         else:
-            target_name = os.path.basename(os.path.abspath(args.input_path))
-            args.output = os.path.join(args.temp_dir, "extracted", target_name)
+            target_name = os.path.basename(os.path.abspath(args.input_paths[0]))
+            args.output = os.path.join(args.temp_dir, target_name)
     
     # Ensure the output directory is unique
     args.output = get_unique_output_dir(args.output)
@@ -241,30 +244,38 @@ def parse_arguments():
 def main():
     args = parse_arguments()
     
-    # Create resources directory and its extracted subdirectory if they don't exist
-    os.makedirs(os.path.join(args.temp_dir, 'extracted'), exist_ok=True)
+    # Create resources directory if it doesn't exist
+    os.makedirs(args.temp_dir, exist_ok=True)
     
-    # Handle GitHub URLs
-    if is_github_url(args.input_path):
-        print(f"\nProcessing GitHub repository: {args.input_path}")
-        repo_path = download_github_repo(args.input_path, args.temp_dir)
-        print(f"Step 1: Downloading and extracting repository... {repo_path}")
-        
-        if not repo_path:
-            print("Failed to download repository", file=sys.stderr)
-            return 1
-        print("\nStep 2: Processing repository files...")
-        input_path = repo_path
-    else:
-        input_path = args.input_path
-    
+    # Process each input path
+    for input_path in args.input_paths:
+        if is_github_url(input_path):
+            print(f"\nProcessing GitHub repository: {input_path}")
+            repo_path = download_github_repo(input_path, args.temp_dir)
+            if not repo_path:
+                print(f"Failed to download repository: {input_path}", file=sys.stderr)
+                continue
+            print(f"Step 1: Downloading and extracting repository... {repo_path}")
+            print("\nStep 2: Processing repository files...")
+            process_path(repo_path, args)
+        else:
+            process_path(input_path, args)
+
+def process_path(input_path, args):
     # Verify the input path exists before proceeding
     if not os.path.exists(input_path):
         print(f"Error: Path does not exist: {input_path}", file=sys.stderr)
-        return 1
+        return
+    
+    # For GitHub repos, set output directory to resources/extracted/<repo>
+    if os.path.dirname(input_path).endswith('resources'):
+        repo_name = os.path.basename(input_path)
+        output_dir = os.path.join(args.temp_dir, 'extracted', repo_name)
+    else:
+        output_dir = args.output
     
     # Create output directory if it doesn't exist
-    os.makedirs(args.output, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
     
     # Register available processors and set verbose mode
     registry.set_verbose(args.verbose)
@@ -272,7 +283,7 @@ def main():
     registry.register_processor(ShellProcessor())
     registry.register_processor(JupyterProcessor())
     registry.register_processor(YAMLProcessor())
-    registry.register_processor(MarkdownProcessor())  # Enable Markdown processor
+    registry.register_processor(MarkdownProcessor())
     registry.register_processor(JavaScriptProcessor())
     registry.register_processor(JSONProcessor())
     
@@ -299,7 +310,7 @@ def main():
         # Write results if we have any DataFrames
         if combined_dfs:
             base_name = os.path.basename(os.path.abspath(input_path))
-            output_path = write_dataframes_to_csv(combined_dfs, args.output, base_name)
+            output_path = write_dataframes_to_csv(combined_dfs, output_dir, base_name)
             if args.verbose:
                 print(f"Results written to: {output_path}")
                 
@@ -338,7 +349,7 @@ def main():
                 # Write results if we have any DataFrames
                 if processor_dfs:
                     base_name = os.path.splitext(os.path.basename(input_path))[0]
-                    output_path = write_dataframes_to_csv(processor_dfs, args.output, base_name)
+                    output_path = write_dataframes_to_csv(processor_dfs, output_dir, base_name)
                     if args.verbose:
                         print(f"Results written to: {output_path}")
             
@@ -353,8 +364,6 @@ def main():
             print("\nFailed to process the following files:")
             for file in failed_files:
                 print(f"- {file}")
-        else:
-            print("\nAll files processed successfully.")
 
 if __name__ == "__main__":
     main()
