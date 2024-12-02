@@ -15,7 +15,7 @@ import pandas as pd
 from .processing_result import ProcessingResult
 
 # Default directories to ignore
-DEFAULT_IGNORE_DIRS = {"venv", ".git", "ds_venv", "dw_env", "__pycache__", ".venv", "*.egg-info"}
+DEFAULT_IGNORE_DIRS = {"venv", ".git", "ds_venv", "dw_env", "__pycache__", ".venv", "*.egg-info", ".github", "node_modules"}
 
 class FileProcessor(ABC):
     """Base class for file processors."""
@@ -362,20 +362,25 @@ class ProcessorRegistry:
                     exact_ignores.add(pattern)
 
         for root, dirs, files in os.walk(directory_path):
+            # Check if current directory path contains any ignored directory
+            rel_root = os.path.relpath(root, directory_path)
+            path_parts = Path(rel_root).parts
+            
+            # Skip if any part of the path matches an ignored directory
+            if any(part in exact_ignores for part in path_parts) or \
+               any(Path(part).match(pattern) for pattern in glob_patterns for part in path_parts):
+                self._debug(f"Skipping ignored directory path: {root}")
+                dirs.clear()  # Clear dirs to prevent further recursion into this path
+                continue
+            
             # Remove directories that match exact names or glob patterns
             dirs[:] = [d for d in dirs 
                       if d not in exact_ignores 
-                      and not any(part in exact_ignores for part in Path(d).parts)
                       and not any(Path(d).match(pattern) for pattern in glob_patterns)]
             
             # Get relative path from input directory
             rel_path = os.path.relpath(root, directory_path)
             rel_path = '.' if rel_path == '.' else rel_path
-            
-            # Skip if current directory matches any glob pattern
-            if any(Path(root).match(pattern) for pattern in glob_patterns):
-                self._debug(f"Skipping ignored directory: {root}")
-                continue
             
             self._debug(f"Scanning directory: {root}")
             for file in files:

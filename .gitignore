@@ -155,9 +155,12 @@ dmypy.json
 cython_debug/
 
 output
-resources/**/*
+resources/**/**
 **/node_modules
-extracted**
+**/extracted**
+
+# Script used for development
+sample_extractor.py
 # PyCharm
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
 #  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
