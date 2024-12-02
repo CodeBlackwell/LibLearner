@@ -167,33 +167,36 @@ function processFile(filePath) {
 
       ExportDefaultDeclaration(path) {
         const node = path.node;
-        let exportValue = '';
-        if (node.declaration.type === 'ArrayExpression') {
-          exportValue = 'Array of configurations';
-          if (node.declaration.elements) {
-            exportValue = `Array of ${node.declaration.elements.length} configurations`;
-          }
-        } else if (node.declaration.type === 'ObjectExpression') {
-          exportValue = 'Configuration object';
-          if (node.declaration.properties) {
-            const props = node.declaration.properties
-              .map(p => p.key.name || p.key.value)
-              .filter(Boolean)
-              .join(', ');
-            exportValue = `Configuration object with properties: ${props}`;
+        let entryName = 'unknown';
+      
+        if (node.declaration.type === 'FunctionDeclaration') {
+          if (node.declaration.id) {
+            entryName = node.declaration.id.name;
+          } else {
+            const params = node.declaration.params.map(param => param.name).join('-');
+            entryName = `anonymousFunction-${params}`;
           }
         } else if (node.declaration.type === 'Identifier') {
-          exportValue = node.declaration.name;
+          entryName = node.declaration.name;
+        } else if (node.declaration.type === 'ObjectExpression') {
+          const properties = node.declaration.properties
+            .map(p => p.key.name || p.key.value)
+            .filter(Boolean)
+            .join('-');
+          entryName = `object-${properties}`;
+        } else if (node.declaration.type === 'ArrayExpression') {
+          entryName = `array-${node.declaration.elements.length}`;
         }
-        
-        records.push({
+      
+        const record = {
           type: 'Export',
+          name: entryName,
           isDefault: true,
-          value: exportValue,
           code: code.substring(node.start, node.end),
-        });
+        };
+        records.push(record);
       },
-
+      
       ExportAllDeclaration(path) {
         const node = path.node;
         records.push({
