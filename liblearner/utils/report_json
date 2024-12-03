@@ -1,0 +1,39 @@
+#!/usr/bin/env python3
+
+import json
+from collections.abc import Mapping, Sequence
+
+def extract_structure(data, indent=0):
+    prefix = ' ' * indent
+    structure = ""
+
+    if isinstance(data, dict):
+        structure += f"{prefix}Object\n"
+        for key, value in data.items():
+            structure += f"{prefix}  {key}:\n"
+            structure += extract_structure(value, indent + 4)
+    elif isinstance(data, list):
+        structure += f"{prefix}Array\n"
+        if len(data) > 0:
+            structure += extract_structure(data[0], indent + 4)
+    else:
+        structure += f"{prefix}{type(data).__name__}\n"
+
+    return structure
+
+if __name__ == "__main__":
+    # Sample JSON data (replace with your JSON input)
+    json_data = {
+        "nodes": [
+            {"id": "Myriel", "group": 1},
+            {"id": "Napoleon", "group": 1}
+        ],
+        "links": [
+            {"source": "Napoleon", "target": "Myriel", "value": 1}
+        ]
+    }
+
+    # Extract the structure and provide examples
+    structure = extract_structure(json_data)
+    print("JSON Structure:")
+    print(structure)
