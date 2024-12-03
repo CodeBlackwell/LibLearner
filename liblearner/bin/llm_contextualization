@@ -168,7 +168,7 @@ def main():
         "-n", "--num-files",
         help="Limit the number of files to process",
         type=int,
-        default=None
+        default=5
     )
     
     args = parser.parse_args()

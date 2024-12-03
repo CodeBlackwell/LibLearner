@@ -283,7 +283,7 @@ def process_path(input_path, args):
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
     
-    # Register available processors and set verbose mode
+    # Set up logging
     if args.verbose_output is not None:
         # Generate default log path if needed
         if args.verbose_output == "default":
@@ -302,7 +302,10 @@ def process_path(input_path, args):
     else:
         registry.set_verbose(args.verbose)
     
-    # Register processors
+    # Set output directory for registry
+    registry.set_output_dir(output_dir)
+    
+    # Register available processors
     registry.register_processor(PythonProcessor())
     registry.register_processor(ShellProcessor())
     registry.register_processor(JupyterProcessor())

@@ -13,6 +13,7 @@ import logging
 from pathlib import Path
 from collections import defaultdict
 import pandas as pd
+from tqdm import tqdm
 from .processing_result import ProcessingResult
 
 # Default directories to ignore
@@ -151,10 +152,16 @@ class ProcessorRegistry:
         self._unique_processors = set()  # Set of unique processor instances
         self._detector = FileTypeDetector()
         self._verbose = False
-        self._results = defaultdict(lambda: defaultdict(pd.DataFrame))
+        self._results_dir = None  # Directory to store intermediate results
         self._processed_files = set()  # Track processed files by absolute path
         self._log_file = None
-    
+        self._chunk_size = 20  # Default chunk size
+        self._current_chunk = defaultdict(list)  # Current chunk of results
+        self._chunk_counter = 0
+        self._progress_bar = None
+        self._total_files = 0
+        self._processed_count = 0
+
     def set_verbose(self, verbose: bool, log_file: Optional[str] = None) -> None:
         """Set verbose mode for debug output and optionally redirect to file.
         
@@ -190,10 +197,46 @@ class ProcessorRegistry:
             if hasattr(processor, 'debug'):
                 processor.debug = verbose
     
+    def set_output_dir(self, output_dir: str) -> None:
+        """Set the output directory for intermediate results."""
+        self._results_dir = output_dir
+        # Create temp directory for chunks
+        self._chunk_dir = os.path.join(output_dir, '.chunks')
+        os.makedirs(self._chunk_dir, exist_ok=True)
+    
+    def set_chunk_size(self, size: int) -> None:
+        """Set the size of chunks for processing.
+        
+        Args:
+            size: Number of files to process before writing a chunk to disk
+        """
+        if size < 1:
+            raise ValueError("Chunk size must be at least 1")
+        self._chunk_size = size
+        self._debug(f"Chunk size set to {size} files")
+    
     def _debug(self, message: str) -> None:
         """Log debug message if verbose mode is enabled."""
         if self._verbose:
             logger.debug(message)
+    
+    def _write_chunk(self) -> None:
+        """Write current chunk to disk and clear memory."""
+        if not self._current_chunk:
+            return
+        
+        chunk_file = os.path.join(self._chunk_dir, f'chunk_{self._chunk_counter}.pkl')
+        
+        # Write chunk to disk using pickle
+        import pickle
+        with open(chunk_file, 'wb') as f:
+            pickle.dump(dict(self._current_chunk), f)
+        
+        # Clear current chunk from memory
+        self._current_chunk.clear()
+        self._chunk_counter += 1
+        
+        self._debug(f"Wrote chunk {self._chunk_counter} to disk")
     
     def register_processor(self, processor: Union[Type[FileProcessor], FileProcessor]) -> None:
         """Register a processor for its supported MIME types.
@@ -284,31 +327,37 @@ class ProcessorRegistry:
                 raise RuntimeError(f"Error determining processor for file {file_path}: {str(e)}")
             return None
     
-    def process_file(self, file_path: str) -> Optional[ProcessingResult]:
+    def process_file(self, file_path: str) -> Optional[Dict]:
         """Process a single file using appropriate processor."""
-        abs_path = str(Path(file_path).resolve())
+        if not os.path.exists(file_path):
+            self._debug(f"File not found: {file_path}")
+            return None
         
-        # Check if file has already been processed
+        abs_path = os.path.abspath(file_path)
         if abs_path in self._processed_files:
             self._debug(f"Skipping already processed file: {file_path}")
             return None
-            
-        try:
-            processor = self.get_processor(file_path)
-        except Exception as e:
-            self._debug(f"Error getting processor for {file_path}: {str(e)}")
-            return None
+        
+        processor = self.get_processor(file_path)
         
         if processor:
             try:
                 result = processor.process_file(file_path)
                 if result and result.is_valid():
-                    # Store the dataframe in the results dictionary
+                    # Add result to current chunk
                     file_type = self._detector.detect_type(file_path)
-                    filename = os.path.basename(file_path)
-                    self._results[file_type][filename] = processor.get_results_dataframe()
+                    self._current_chunk[file_type].append({
+                        'filename': os.path.basename(file_path),
+                        'data': processor.get_results_dataframe()
+                    })
+                    
+                    # Write chunk if it reaches the size limit
+                    if len(self._current_chunk) >= self._chunk_size:
+                        self._write_chunk()
+                    
                     # Mark file as processed
                     self._processed_files.add(abs_path)
+                    
                 self._debug(f"Successfully processed {file_path}")
                 return result
             except Exception as e:
@@ -316,147 +365,170 @@ class ProcessorRegistry:
                 return None
         return None
 
-    def get_results(self) -> Dict[str, Dict[str, pd.DataFrame]]:
-        """
-        Get all processing results organized by file type and filename.
-        
-        Returns:
-            Dictionary mapping file types to dictionaries of filename -> DataFrame
-        """
-        return dict(self._results)
+    def _count_files(self, directory_path: str, ignore_dirs: Optional[List[str]] = None) -> int:
+        """Count total number of files to process."""
+        total = 0
+        exact_ignores = set(DEFAULT_IGNORE_DIRS)
+        if ignore_dirs:
+            exact_ignores.update(ignore_dirs)
 
-    def write_results_to_csv(self, output_dir: str, combined: bool = True) -> None:
-        """
-        Write processing results to CSV files.
-        
-        Args:
-            output_dir: Directory to write CSV files to
-            combined: If True, create a single combined CSV for all file types.
-                     If False, create separate CSVs for each file type.
-        """
-        os.makedirs(output_dir, exist_ok=True)
-        
-        if combined:
-            # Combine all DataFrames
-            all_dfs = []
-            for file_type, files_dict in self._results.items():
-                for filename, df in files_dict.items():
-                    if not df.empty:
-                        df = df.copy()
-                        df['file_type'] = file_type
-                        df['filename'] = filename
-                        all_dfs.append(df)
-            
-            if all_dfs:
-                combined_df = pd.concat(all_dfs, ignore_index=True)
-                output_path = os.path.join(output_dir, 'combined_results.csv')
-                combined_df.to_csv(output_path, index=False)
-                self._debug(f"Written combined results to {output_path}")
-        else:
-            # Write separate CSV for each file type
-            for file_type, files_dict in self._results.items():
-                file_type_dfs = []
-                for filename, df in files_dict.items():
-                    if not df.empty:
-                        df = df.copy()
-                        df['filename'] = filename
-                        file_type_dfs.append(df)
-                
-                if file_type_dfs:
-                    file_type_df = pd.concat(file_type_dfs, ignore_index=True)
-                    safe_name = file_type.replace('/', '_').replace('+', '_')
-                    output_path = os.path.join(output_dir, f'{safe_name}_results.csv')
-                    file_type_df.to_csv(output_path, index=False)
-                    self._debug(f"Written {file_type} results to {output_path}")
+        for root, dirs, files in os.walk(directory_path):
+            # Remove ignored directories
+            dirs[:] = [d for d in dirs if d not in exact_ignores]
+            total += len(files)
+        return total
 
     def process_directory(self, directory_path: str, ignore_dirs: Optional[List[str]] = None) -> Dict[str, List[ProcessingResult]]:
-        """
-        Process all files in a directory recursively.
+        """Process all files in a directory recursively."""
+        self._total_files = self._count_files(directory_path, ignore_dirs)
+        self._processed_count = 0
         
-        Args:
-            directory_path: Path to the directory to process
-            ignore_dirs: List of directory names to ignore (in addition to DEFAULT_IGNORE_DIRS)
+        # Initialize progress bar
+        self._progress_bar = tqdm(
+            total=self._total_files,
+            desc="Processing files",
+            unit="file",
+            position=0,
+            leave=True
+        )
         
-        Returns:
-            Dictionary mapping relative paths to lists of processing results
-        """
-        results = defaultdict(list)
-        unprocessed_files = []  # Track files without processors
-        
-        # Split ignore patterns into exact matches and glob patterns
-        exact_ignores = set()
-        glob_patterns = set()
-        
-        # Process default ignore dirs
-        for pattern in DEFAULT_IGNORE_DIRS:
-            if '*' in pattern:
-                glob_patterns.add(pattern)
-            else:
-                exact_ignores.add(pattern)
-        
-        # Add user-provided ignore dirs
-        if ignore_dirs:
-            for pattern in ignore_dirs:
+        try:
+            results = defaultdict(list)
+            unprocessed_files = []
+            
+            # Split ignore patterns into exact matches and glob patterns
+            exact_ignores = set()
+            glob_patterns = set()
+            
+            # Process default ignore dirs
+            for pattern in DEFAULT_IGNORE_DIRS:
                 if '*' in pattern:
                     glob_patterns.add(pattern)
                 else:
                     exact_ignores.add(pattern)
-
-        for root, dirs, files in os.walk(directory_path):
-            # Check if current directory path contains any ignored directory
-            rel_root = os.path.relpath(root, directory_path)
-            path_parts = Path(rel_root).parts
             
-            # Skip if any part of the path matches an ignored directory
-            if any(part in exact_ignores for part in path_parts) or \
-               any(Path(part).match(pattern) for pattern in glob_patterns for part in path_parts):
-                self._debug(f"Skipping ignored directory path: {root}")
-                dirs.clear()  # Clear dirs to prevent further recursion into this path
-                continue
-            
-            # Remove directories that match exact names or glob patterns
-            dirs[:] = [d for d in dirs 
-                      if d not in exact_ignores 
-                      and not any(Path(d).match(pattern) for pattern in glob_patterns)]
-            
-            # Get relative path from input directory
-            rel_path = os.path.relpath(root, directory_path)
-            rel_path = '.' if rel_path == '.' else rel_path
-            
-            self._debug(f"Scanning directory: {root}")
-            for file in files:
-                file_path = os.path.join(root, file)
-                self._debug(f"Found file: {file_path}")
-                
-                # Try to get processor first to check if file type is supported
-                processor = self.get_processor(file_path)
-                if processor:
-                    self._debug(f"Found processor for {file_path}: {type(processor).__name__}")
-                    result = self.process_file(file_path)
-                    if result and result.is_valid():
-                        self._debug(f"Successfully processed {file_path}")
-                        results[rel_path].append(result)
+            # Add user-provided ignore dirs
+            if ignore_dirs:
+                for pattern in ignore_dirs:
+                    if '*' in pattern:
+                        glob_patterns.add(pattern)
                     else:
-                        self._debug(f"Failed to process {file_path}")
-                else:
-                    self._debug(f"No processor found for {file_path}")
-                    # Add to unprocessed files list with file extension
-                    ext = Path(file_path).suffix
-                    unprocessed_files.append((file_path, ext))
-        
-        # Sort and group unprocessed files by extension
-        if unprocessed_files:
-            print("\nFiles without available processors:")
-            by_extension = defaultdict(list)
-            for file_path, ext in unprocessed_files:
-                by_extension[ext].append(file_path)
+                        exact_ignores.add(pattern)
             
-            for ext, files in sorted(by_extension.items()):
-                print(f"\n{ext} files ({len(files)}):")
-                for file_path in sorted(files):
-                    print(f"  {file_path}")
+            # Walk through directory
+            for root, dirs, files in os.walk(directory_path):
+                # Remove ignored directories
+                dirs[:] = [d for d in dirs if d not in exact_ignores]
+                
+                # Process each file
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    try:
+                        result = self.process_file(file_path)
+                        if result:
+                            rel_path = os.path.relpath(root, directory_path)
+                            results[rel_path].append(result)
+                        else:
+                            unprocessed_files.append(file_path)
+                    except Exception as e:
+                        self._debug(f"Error processing {file_path}: {str(e)}")
+                        unprocessed_files.append(file_path)
+                    
+                    # Update progress
+                    self._processed_count += 1
+                    if self._progress_bar:
+                        self._progress_bar.update(1)
+                        self._progress_bar.set_postfix({
+                            'chunks': self._chunk_counter,
+                            'current_chunk': len(self._current_chunk)
+                        })
+            
+            return dict(results)
+        finally:
+            # Close progress bar
+            if self._progress_bar:
+                self._progress_bar.close()
+                self._progress_bar = None
+
+    def write_results_to_csv(self, output_dir: str, combined: bool = True) -> None:
+        """Write all results to CSV files, combining chunks."""
+        os.makedirs(output_dir, exist_ok=True)
         
-        return dict(results)
+        # Write final chunk if any
+        if self._current_chunk:
+            self._write_chunk()
+        
+        # Process chunks and write results
+        all_dfs = defaultdict(list)
+        import pickle
+        
+        # Create progress bar for chunk processing
+        chunk_progress = tqdm(
+            total=self._chunk_counter,
+            desc="Processing chunks",
+            unit="chunk",
+            position=0,
+            leave=True
+        )
+        
+        try:
+            # Process each chunk file
+            for i in range(self._chunk_counter):
+                chunk_file = os.path.join(self._chunk_dir, f'chunk_{i}.pkl')
+                try:
+                    with open(chunk_file, 'rb') as f:
+                        chunk_data = pickle.load(f)
+                    
+                    # Process each file type in the chunk
+                    for file_type, results in chunk_data.items():
+                        for result in results:
+                            df = result['data']
+                            if not df.empty:
+                                df = df.copy()
+                                df['filename'] = result['filename']
+                                if combined:
+                                    df['file_type'] = file_type
+                                all_dfs[file_type].append(df)
+                    
+                    # Remove processed chunk file
+                    os.remove(chunk_file)
+                    chunk_progress.update(1)
+                except Exception as e:
+                    self._debug(f"Error processing chunk {i}: {str(e)}")
+            
+            # Write final results with a new progress bar
+            if combined:
+                combined_dfs = []
+                for file_type, dfs in all_dfs.items():
+                    if dfs:
+                        combined_dfs.extend(dfs)
+                
+                if combined_dfs:
+                    with tqdm(desc="Writing combined results", total=1, leave=True) as pbar:
+                        combined_df = pd.concat(combined_dfs, ignore_index=True)
+                        output_path = os.path.join(output_dir, 'combined_results.csv')
+                        combined_df.to_csv(output_path, index=False)
+                        pbar.update(1)
+                        self._debug(f"Written combined results to {output_path}")
+            else:
+                with tqdm(desc="Writing type-specific results", total=len(all_dfs), leave=True) as pbar:
+                    for file_type, dfs in all_dfs.items():
+                        if dfs:
+                            file_type_df = pd.concat(dfs, ignore_index=True)
+                            safe_name = file_type.replace('/', '_').replace('+', '_')
+                            output_path = os.path.join(output_dir, f'{safe_name}_results.csv')
+                            file_type_df.to_csv(output_path, index=False)
+                            pbar.update(1)
+                            self._debug(f"Written {file_type} results to {output_path}")
+        finally:
+            chunk_progress.close()
+            
+            # Clean up chunk directory
+            try:
+                import shutil
+                shutil.rmtree(self._chunk_dir)
+            except Exception as e:
+                self._debug(f"Error cleaning up chunk directory: {str(e)}")
 
 # Global registry instance
 registry = ProcessorRegistry()
