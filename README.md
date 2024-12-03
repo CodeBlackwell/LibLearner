@@ -1,304 +1,131 @@
-# LibLearner
+# 🎓 LibLearner
 
-A collection of tools and libraries for code analysis and learning.
+> Train your own T5 model on any codebase with powerful code extraction and processing tools.
 
-## Projects
+<div align="center">
 
-### Function Extractor (`liblearner`)
+[![Python Version](https://img.shields.io/badge/python-3.7%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Code Style: Black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-A Python library and CLI tool for extracting and analyzing code from various source files. The tool can extract functions, methods, classes, and other code elements from Python, JavaScript, Jupyter notebooks, and Markdown files, saving them in a structured format for further analysis.
+</div>
 
-### File Extension Scout (`scout_extensions`)
+## 🎯 Purpose
 
-A streamlined command-line tool for analyzing file extensions in a directory tree. Features include:
-- Recursive directory traversal
-- Frequency-based sorting
-- Configurable directory exclusions
-- Empty extension filtering
-- Cross-platform compatibility
+LibLearner is a comprehensive toolkit designed to help you create custom T5 models trained on specific codebases. It extracts, processes, and prepares code from various sources, making it easy to train specialized code understanding and generation models.
 
-## 🔍 Processors
+## ✨ Key Features
 
-LibLearner includes several specialized processors for different file types:
+- 🔍 **Universal Code Extraction**: Process any codebase or GitHub repository
+- 📊 **Multi-Format Support**: Handle Python, JavaScript, Jupyter notebooks, and more
+- 🤖 **T5 Training Ready**: Structured output perfect for fine-tuning T5 models
+- 🔄 **Batch Processing**: Process entire repositories or directories at once
+- 📈 **Rich Analysis**: Extract functions, classes, docstrings, and more
+- 🌐 **GitHub Integration**: Direct processing of GitHub repositories
 
-### Markdown Processor
-- Comprehensive Markdown file analysis
-- Headers and hierarchy extraction
-- Code blocks with language detection
-- Lists, links, and references
-- Tables and formatting
-- YAML frontmatter parsing
-- Table of Contents generation
-
-### MDX Processor
-- JSX component extraction and analysis
-- Import/export module tracking
-- Layout and theme detection
-- Frontmatter parsing
-- Component props analysis
-- Markdown feature support
-- Interactive component detection
-- Next.js and React integration
-
-### YAML Processor
-- Rich YAML document analysis
-- Environment variable detection
-- Service configuration parsing
-- API configuration extraction
-- URL identification
-- Type and schema inference
-- Dependency tracking
-- Multi-document support
-- Docker and Kubernetes config analysis
-
-### Python Processor
-- Functions, classes, methods, and docstrings
-- Type hinting and annotation support
-- Decorator detection and parsing
-- Lambda functions and closures
-- Context manager analysis
-- Import and export tracking
-
-### JavaScript Processor
-- Functions, classes, methods, and JSDoc comments
-- ES6+ syntax support
-- Module import and export analysis
-- Async/await and promise handling
-- Class and inheritance analysis
-- Decorator detection and parsing
-
-### Jupyter Processor
-- Code cells, markdown cells, and outputs
-- Notebook structure and hierarchy analysis
-- Cell metadata and tags
-- Output analysis and visualization
-- Interactive shell and kernel support
-
-### Currently Supported File Types
-
-- **Python** (.py): Functions, classes, methods, and docstrings
-- **JavaScript** (.js): Functions, classes, methods, and JSDoc comments
-- **Jupyter** (.ipynb): Code cells, markdown cells, and outputs
-- **Markdown** (.md): Headers, code blocks, lists, links, tables, and metadata
-
-#### Quick Start
+## 🚀 Quick Start
 
 ```bash
-# Install Python package
-cd liblearner
+# Install LibLearner
 pip install -e .
 
-# Install Node.js dependencies (required for JavaScript processing)
-npm install
+# Process a GitHub repository
+process_files https://github.com/user/repo -o ./training_data
 
-# Use the CLI tools
-extract_functions path/to/your/code -o output_dir  # Extract code elements
-scout_extensions path/to/directory --sort          # List file extensions by frequency
-scout_extensions path/to/directory --no-empty      # Skip files without extensions
-scout_extensions path/to/directory --ignore-dirs node_modules,dist  # Exclude directories
+# Process local files
+process_files ./my_codebase -o ./training_data
+
+# Extract with detailed logging
+process_files -v ./src --ignore-dirs tests,docs
 ```
 
-For more details, see the [liblearner README](liblearner/README.md).
+## 🛠️ Core Tools
 
-## 🛣️ Processor Roadmap
+### 1. File Processor (`process_files`)
 
-### Completed Processors
-- ✅ **Markdown Processor**: Full Markdown syntax support with frontmatter
-- ✅ **YAML Processor**: Configuration analysis with environment and service detection
-- ✅ **Python Processor**: Python code analysis with type hints and docstrings
-- ✅ **JavaScript Processor**: Modern JavaScript/ES6+ analysis
-- ✅ **Jupyter Processor**: Notebook cell and output analysis
-- ✅ **MDX Processor**: JSX in Markdown with component and module analysis
-
-### In Development
-- 🚧 **RST Processor**: Next priority
-  - reStructuredText parsing
-  - Sphinx directives
-  - Documentation roles
-  - Cross-reference system
-  - Table of contents
-  - Directive extensions
-  - Theme compatibility
-  - Documentation generation
-
-### Planned Processors
-- 📋 **JSONL Processor**
-  - Line-by-line JSON parsing
-  - Schema inference
-  - Data validation
-  - Streaming support
-  - Type detection
-  - Data statistics
-  - Error recovery
-  - Bulk processing
-
-- 📋 **Properties/CONF Processor**
-  - Configuration key-value parsing
-  - Environment variable support
-  - Include directive handling
-  - Hierarchical config support
-  - Variable interpolation
-  - Conditional sections
-  - Multi-environment configs
-  - Import resolution
-
-### Future Considerations
-- 💡 **TOML Processor**: Modern config file format
-  - Table support
-  - Array of tables
-  - Inline tables
-  - Key-value pairs
-  - Data types
-  - DateTime handling
-
-- 💡 **TypeScript Processor**: Static typing and interfaces
-  - Type definitions
-  - Interface analysis
-  - Generic support
-  - Decorator analysis
-  - Module resolution
-  - JSX/TSX support
-
-- 💡 **GraphQL Processor**: Schema and query analysis
-  - Schema validation
-  - Query parsing
-  - Type system
-  - Directives
-  - Fragments
-  - Mutations/Subscriptions
-
-- 💡 **XML/HTML Processor**: Markup and DOM analysis
-  - Element hierarchy
-  - Attribute extraction
-  - Namespace support
-  - XPath queries
-  - XSLT templates
-  - DTD validation
-
-- 💡 **CSV/TSV Processor**: Tabular data analysis
-  - Header detection
-  - Type inference
-  - Delimiter handling
-  - Quoted fields
-  - Escape sequences
-  - Data validation
-
-### Integration Goals
-- 🎯 Cross-processor reference tracking
-  - File dependencies
-  - Symbol resolution
-  - Import graphs
-  - Type relationships
-
-- 🎯 Unified type system
-  - Common type representation
-  - Type conversion
-  - Schema validation
-  - Type inference
-
-- 🎯 Dependency graph generation
-  - Module dependencies
-  - Type dependencies
-  - File relationships
-  - Circular detection
-
-- 🎯 Documentation cross-linking
-  - Symbol linking
-  - API references
-  - Code examples
-  - Version tracking
-
-- 🎯 Schema validation framework
-  - JSON Schema
-  - XML Schema
-  - Custom validators
-  - Error reporting
-
-### Performance Goals
-- 🚀 Parallel processing
-- 🚀 Incremental analysis
-- 🚀 Caching system
-- 🚀 Memory optimization
-- 🚀 Large file handling
-
-### Security Goals
-- 🔒 Safe parsing
-- 🔒 Input validation
-- 🔒 Resource limits
-- 🔒 Sandbox execution
-- 🔒 Credential detection
-
-## Repository Structure
-
-```
-LibLearner/
-├── liblearner/           # Code extraction library
-│   ├── liblearner/      # Core library code
-│   │   ├── processors/  # Language-specific processors
-│   │   ├── extractors/  # Language-specific extractors
-│   │   └── scout/       # File analysis tools
-│   ├── bin/             # CLI tools
-│   ├── tests/           # Test suite
-│   ├── setup.py         # Package configuration
-│   ├── package.json     # Node.js dependencies
-│   └── README.md        # Library documentation
-├── LICENSE              # Project license
-└── README.md           # This file
-```
-
-## Development
-
-### Prerequisites
-
-- Python 3.7 or higher
-- Node.js 14 or higher (for JavaScript processing)
-- npm (Node.js package manager)
-
-### Installation
-
-1. Install Python dependencies:
-```bash
-cd liblearner
-pip install -e .
-```
-
-2. Install Node.js dependencies:
-```bash
-npm install
-```
-
-### Running Tests
-
-The test suite is located in the `liblearner/tests` directory. To run the tests:
+Our main utility for code extraction and analysis:
 
 ```bash
-cd liblearner
-python -m unittest discover -s tests -v
+process_files [-h] [-o OUTPUT] [--ignore-dirs [DIRS...]] [-v] [--temp-dir DIR] input_paths...
 ```
 
-Alternative test commands:
+**Features:**
+- 🔄 Batch processing of files and directories
+- 🌐 Direct GitHub repository processing
+- 📊 CSV output for structured data
+- ⚙️ Configurable processing options
+- 📝 Comprehensive error reporting
+
+### 2. Function Extractor (`extract_functions`)
+
+Specialized tool for function-level extraction:
 
 ```bash
-# Run specific processor tests
-python -m unittest tests/test_python_processor.py
-python -m unittest tests/test_javascript_processor.py
-python -m unittest tests/test_jupyter_processor.py
-python -m unittest tests/test_markdown_processor.py
-
-# Run scout tools tests
-python -m unittest tests/test_scout_extensions.py
-
-# Run a specific test class
-python -m unittest tests.test_python_processor.TestPythonProcessor
-
-# Run a specific test method
-python -m unittest tests.test_python_processor.TestPythonProcessor.test_supported_types
+extract_functions path/to/code -o output_dir
 ```
 
-## Contributing
+### 3. Extension Scout (`scout_extensions`)
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Analyze file types in your codebase:
 
-## License
+```bash
+scout_extensions path/to/directory --sort
+```
+
+## 📝 Supported File Types
+
+| Type | Extension | Features |
+|------|-----------|----------|
+| Python | `.py` | Functions, classes, type hints, docstrings |
+| JavaScript | `.js` | Functions, classes, JSDoc, ES6+ syntax |
+| Jupyter | `.ipynb` | Code cells, markdown, outputs |
+| Markdown | `.md` | Headers, code blocks, documentation |
+| YAML | `.yml/.yaml` | Configurations, schemas |
+| JSON | `.json` | Data structures, configs |
+| Shell | `.sh` | Scripts, commands |
+
+## 🔧 Processors
+
+LibLearner includes specialized processors for each file type:
+
+### Current Processors
+- ✅ **Python Processor**: Full language feature support
+- ✅ **JavaScript Processor**: Modern JS/ES6+ analysis
+- ✅ **Jupyter Processor**: Notebook analysis
+- ✅ **Markdown Processor**: Documentation parsing
+- ✅ **YAML Processor**: Configuration analysis
+- ✅ **MDX Processor**: JSX in Markdown support
+
+### Coming Soon
+- 🚧 **RST Processor**: Documentation processing
+- 📋 **JSONL Processor**: Streaming data handling
+- 📋 **TypeScript Processor**: Static typing support
+
+## 🎯 T5 Training Pipeline
+
+1. **Extract Code**
+   ```bash
+   process_files your/codebase -o training_data
+   ```
+
+2. **Prepare Dataset**
+   ```bash
+   prepare_t5_dataset training_data -o t5_ready
+   ```
+
+3. **Train Model**
+   ```bash
+   train_t5_model t5_ready -o trained_model
+   ```
+
+## 📚 Documentation
+
+For detailed documentation, visit our [documentation site](docs/).
+
+## 🤝 Contributing
+
+We welcome contributions! See our [Contributing Guide](CONTRIBUTING.md) for details.
+
+## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

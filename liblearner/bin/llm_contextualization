@@ -1,0 +1,241 @@
+#!/usr/bin/env python3
+
+import argparse
+import os
+import sys
+import pandas as pd
+import json
+from openai import OpenAI
+from pathlib import Path
+from typing import Dict, List, Optional, Iterator
+from datetime import datetime
+from tqdm import tqdm
+import colorama
+from colorama import Fore, Style
+
+# Initialize colorama for cross-platform color support
+colorama.init()
+
+def load_csv_data(file_path: str) -> pd.DataFrame:
+    """Load and validate CSV data from process_files output."""
+    try:
+        df = pd.read_csv(file_path)
+        required_columns = ['filepath', 'content', 'processor_type']
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        if missing_columns:
+            raise ValueError(f"Missing required columns: {', '.join(missing_columns)}")
+            
+        # Clean filepaths by removing everything up to and including 'resources/'
+        df['filepath'] = df['filepath'].apply(lambda x: x.split('resources/')[-1] if 'resources/' in x else x)
+        
+        return df
+    except Exception as e:
+        print(f"Error loading CSV file: {str(e)}", file=sys.stderr)
+        sys.exit(1)
+
+def get_file_chunks(df: pd.DataFrame, limit: Optional[int] = None) -> Iterator[tuple[str, pd.DataFrame]]:
+    """Generate chunks of data grouped by filepath.
+    
+    Args:
+        df: DataFrame containing the data
+        limit: Optional limit on number of files to process
+    """
+    grouped = df.groupby('filepath')
+    if limit is not None:
+        # Get list of unique filepaths and limit it
+        filepaths = list(grouped.groups.keys())[:limit]
+        # Only yield the limited groups
+        for filepath in filepaths:
+            yield filepath, grouped.get_group(filepath)
+    else:
+        yield from grouped
+
+def prepare_messages(filepath: str, chunk_df: pd.DataFrame, system_prompt: Optional[str] = None) -> List[Dict]:
+    """Prepare messages for OpenAI API from a single file's content."""
+    messages = []
+    
+    # Add system prompt if provided
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    
+    # Combine all content from the same file
+    file_content = "\n\n".join(chunk_df['content'].astype(str))
+    
+    # Add file metadata
+    processor_types = chunk_df['processor_type'].unique()
+    metadata = {
+        'filepath': filepath,
+        'processor_types': processor_types.tolist(),
+        'num_entries': len(chunk_df)
+    }
+    
+    message = {
+        "role": "user",
+        "content": f"Analyzing file: {filepath}\nMetadata: {json.dumps(metadata, indent=2)}\n\nContent:\n{file_content}"
+    }
+    messages.append(message)
+    
+    return messages
+
+def call_openai_api(client: OpenAI, messages: List[Dict], model: str, temperature: float) -> str:
+    """Call OpenAI API with messages and return response."""
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=temperature
+        )
+        # Extract the actual response text
+        return response.choices[0].message.content
+    except Exception as e:
+        print(f"Error calling OpenAI API: {str(e)}", file=sys.stderr)
+        sys.exit(1)
+
+def save_responses(responses: List[Dict], output_dir: str):
+    """Save responses to individual files and a combined file."""
+    try:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # Save individual responses
+        for response in responses:
+            filepath = response['filepath']
+            filename = f"{Path(filepath).stem}_{timestamp}.json"
+            output_path = Path(output_dir) / filename
+            
+            with open(output_path, 'w') as f:
+                json.dump(response, f, indent=2)
+        
+        # Save combined responses
+        combined_path = Path(output_dir) / f"combined_responses_{timestamp}.json"
+        with open(combined_path, 'w') as f:
+            json.dump(responses, f, indent=2)
+            
+    except Exception as e:
+        print(f"Error saving responses: {str(e)}", file=sys.stderr)
+        sys.exit(1)
+
+def get_default_output_dir(input_file: str) -> str:
+    """Generate default output directory path based on input file name."""
+    # Get the base directory of the library
+    lib_dir = Path(__file__).resolve().parent.parent
+    
+    # Create path to llm_output directory
+    llm_output_dir = lib_dir / 'resources' / 'llm_output'
+    
+    # Get target name from input file
+    target_name = Path(input_file).stem
+    
+    # Create full output path
+    output_dir = llm_output_dir / target_name
+    
+    return str(output_dir)
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Process CSV output from process_files and send to OpenAI API"
+    )
+    parser.add_argument(
+        "input_file",
+        help="CSV file containing process_files output"
+    )
+    parser.add_argument(
+        "-o", "--output-dir",
+        help="Output directory for API responses (default: liblearner/resources/llm_output/<target_name>)",
+        default=None
+    )
+    parser.add_argument(
+        "--model",
+        help="OpenAI model to use (default: gpt-4o)",
+        default="gpt-4o"
+    )
+    parser.add_argument(
+        "--temperature",
+        help="Temperature for response generation (default: 0.1)",
+        type=float,
+        default=0.1
+    )
+    parser.add_argument(
+        "--system-prompt",
+        help="Optional system prompt to guide the model",
+        default="Provide a summary of the content of the file."
+    )
+    parser.add_argument(
+        "--api-key",
+        help="OpenAI API key (defaults to OPENAI_API_KEY environment variable)",
+        default=os.environ.get('OPENAI_API_KEY')
+    )
+    parser.add_argument(
+        "-n", "--num-files",
+        help="Limit the number of files to process",
+        type=int,
+        default=None
+    )
+    
+    args = parser.parse_args()
+    
+    # Set default output directory if not specified
+    if args.output_dir is None:
+        args.output_dir = get_default_output_dir(args.input_file)
+    
+    # Create output directory structure
+    os.makedirs(args.output_dir, exist_ok=True)
+    
+    # Check for API key
+    if not args.api_key:
+        print("Error: OpenAI API key not found. Either use --api-key or set OPENAI_API_KEY environment variable.",
+              file=sys.stderr)
+        sys.exit(1)
+    
+    client = OpenAI(api_key=args.api_key)
+    
+    # Load and process data
+    df = load_csv_data(args.input_file)
+    responses = []
+    
+    # Get total number of files and create file iterator
+    total_files = len(df['filepath'].unique())
+    limit_msg = f" (limited to {args.num_files})" if args.num_files else ""
+    print(f"\n{Fore.BLUE}🔍 Found {total_files} unique files{limit_msg}{Style.RESET_ALL}")
+    
+    file_chunks = list(get_file_chunks(df, args.num_files))
+    
+    try:
+        # Process each file chunk with progress bar
+        for filepath, chunk_df in tqdm(file_chunks, desc="Processing files", unit="file"):
+            print(f"\n{Fore.CYAN}📄 Processing: {filepath}{Style.RESET_ALL}")
+            messages = prepare_messages(filepath, chunk_df, args.system_prompt)
+            
+            # Call API and store response
+            response_text = call_openai_api(client, messages, args.model, args.temperature)
+            responses.append({
+                'filepath': filepath,
+                'response': response_text,
+                'metadata': {
+                    'model': args.model,
+                    'temperature': args.temperature,
+                    'processor_types': chunk_df['processor_type'].unique().tolist(),
+                    'num_entries': len(chunk_df)
+                }
+            })
+        
+        # Save all responses
+        save_responses(responses, args.output_dir)
+        print(f"\n{Fore.GREEN}✅ Successfully processed all files!{Style.RESET_ALL}")
+        print(f"{Fore.BLUE}📁 Responses saved to: {args.output_dir}{Style.RESET_ALL}")
+        
+    except KeyboardInterrupt:
+        print(f"\n{Fore.YELLOW}⚠️  Processing interrupted by user{Style.RESET_ALL}")
+        if responses:
+            print(f"{Fore.BLUE}💾 Saving partial results...{Style.RESET_ALL}")
+            save_responses(responses, args.output_dir)
+            print(f"{Fore.GREEN}✅ Partial results saved to: {args.output_dir}{Style.RESET_ALL}")
+    except Exception as e:
+        print(f"\n{Fore.RED}❌ Error during processing: {str(e)}{Style.RESET_ALL}", file=sys.stderr)
+        if responses:
+            print(f"{Fore.BLUE}💾 Attempting to save partial results...{Style.RESET_ALL}")
+            save_responses(responses, args.output_dir)
+            print(f"{Fore.GREEN}✅ Partial results saved to: {args.output_dir}{Style.RESET_ALL}")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()

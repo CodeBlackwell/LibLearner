@@ -1,39 +1,76 @@
 #!/usr/bin/env python3
 
 import json
+import sys
+import os
 from collections.abc import Mapping, Sequence
 
-def extract_structure(data, indent=0):
+def get_type_sample(value):
+    if isinstance(value, (str, int, float, bool)):
+        return f"(example: {repr(value)})"
+    return ""
+
+def count_elements(data):
+    count = 1
+    if isinstance(data, dict):
+        for value in data.values():
+            count += count_elements(value)
+    elif isinstance(data, list):
+        for item in data:
+            count += count_elements(item)
+    return count
+
+def extract_structure(data, indent=0, max_array_items=3):
     prefix = ' ' * indent
     structure = ""
 
     if isinstance(data, dict):
-        structure += f"{prefix}Object\n"
+        structure += f"{prefix}Object ({len(data)} keys)\n"
         for key, value in data.items():
             structure += f"{prefix}  {key}:\n"
             structure += extract_structure(value, indent + 4)
     elif isinstance(data, list):
-        structure += f"{prefix}Array\n"
+        structure += f"{prefix}Array (length: {len(data)})\n"
         if len(data) > 0:
-            structure += extract_structure(data[0], indent + 4)
+            sample_size = min(max_array_items, len(data))
+            for i in range(sample_size):
+                structure += f"{prefix}  Item {i}:\n"
+                structure += extract_structure(data[i], indent + 4)
+            if len(data) > max_array_items:
+                structure += f"{prefix}  ... ({len(data) - max_array_items} more items)\n"
     else:
-        structure += f"{prefix}{type(data).__name__}\n"
+        sample = get_type_sample(data)
+        structure += f"{prefix}{type(data).__name__} {sample}\n"
 
     return structure
 
 if __name__ == "__main__":
-    # Sample JSON data (replace with your JSON input)
-    json_data = {
-        "nodes": [
-            {"id": "Myriel", "group": 1},
-            {"id": "Napoleon", "group": 1}
-        ],
-        "links": [
-            {"source": "Napoleon", "target": "Myriel", "value": 1}
-        ]
-    }
+    if len(sys.argv) != 2:
+        print("Usage: ./report_json <json_file>")
+        sys.exit(1)
 
-    # Extract the structure and provide examples
+    json_file = sys.argv[1]
+    try:
+        file_size = os.path.getsize(json_file)
+        with open(json_file, 'r') as f:
+            json_data = json.load(f)
+    except FileNotFoundError:
+        print(f"Error: File '{json_file}' not found")
+        sys.exit(1)
+    except json.JSONDecodeError:
+        print(f"Error: '{json_file}' contains invalid JSON")
+        sys.exit(1)
+
+    print(f"\nJSON File Analysis: {os.path.basename(json_file)}")
+    print(f"{'='* 50}")
+    print(f"File Size: {file_size:,} bytes")
+    print(f"Total Elements: {count_elements(json_data):,}")
+    if isinstance(json_data, dict):
+        print(f"Root Keys: {', '.join(json_data.keys())}")
+    elif isinstance(json_data, list):
+        print(f"Root Array Length: {len(json_data)}")
+
+    print("\nDetailed Structure:")
+    print("-" * 50)
     structure = extract_structure(json_data)
-    print("JSON Structure:")
     print(structure)

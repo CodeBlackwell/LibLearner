@@ -11,6 +11,7 @@ jupyter_core==5.7.2
 -e git+https://github.com/CodeBlackwell/LibLearner.git@9f94ece2b714fbfa5b508487a4bc135ef58da379#egg=liblearner&subdirectory=liblearner
 nbformat==5.10.4
 numpy==2.1.3
+openai>=1.0.0
 pandas==2.2.3
 pathlib==1.0.1
 platformdirs==4.3.6
