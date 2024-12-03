@@ -15,7 +15,7 @@ import pandas as pd
 from .processing_result import ProcessingResult
 
 # Default directories to ignore
-DEFAULT_IGNORE_DIRS = {"venv", ".git", "ds_venv", "dw_env", "__pycache__", ".venv", "*.egg-info", ".github", "node_modules"}
+DEFAULT_IGNORE_DIRS = {"venv", ".git", "ds_venv", "dw_env", "__pycache__", ".venv", "*.egg-info", ".github", "node_modules", "*tests*"}
 
 class FileProcessor(ABC):
     """Base class for file processors."""

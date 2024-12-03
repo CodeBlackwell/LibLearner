@@ -24,9 +24,9 @@ from yaml.scanner import ScannerError
 from ..file_processor import FileProcessor
 from ..processing_result import YAMLProcessingResult
 
-# Set up a logger for debug output
-logging.basicConfig(level=logging.INFO)
+# Set up logging with a higher default level
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.WARNING)  # Default to WARNING level
 
 class YAMLProcessor(FileProcessor):
     """Processor for YAML files."""
@@ -37,6 +37,8 @@ class YAMLProcessor(FileProcessor):
         self.debug = debug
         if self.debug:
             logger.setLevel(logging.DEBUG)
+        else:
+            logger.setLevel(logging.WARNING)
             
         # Initialize results DataFrame
         self.results_df = pd.DataFrame()
@@ -67,7 +69,9 @@ class YAMLProcessor(FileProcessor):
         self._order_counter = 0
         self._current_path = []
         
-        logger.info(f"Starting to process YAML file: {file_path}")
+        if self.debug:
+            logger.info(f"Starting to process YAML file: {file_path}")
+        
         path = Path(file_path)
         result = YAMLProcessingResult()
         results_data = []
@@ -95,16 +99,19 @@ class YAMLProcessor(FileProcessor):
 
         try:
             content = path.read_text()
-            logger.debug(f"Read file content, size: {len(content)} bytes")
+            if self.debug:
+                logger.debug(f"Read file content, size: {len(content)} bytes")
             
             # Parse YAML content
             documents = list(yaml.safe_load_all(content))
-            logger.info(f"Found {len(documents)} YAML documents")
+            if self.debug:
+                logger.info(f"Found {len(documents)} YAML documents")
             
             # Process each document
             for doc_idx, doc in enumerate(documents):
                 if doc:  # Skip empty documents
-                    logger.debug(f"Processing document {doc_idx}")
+                    if self.debug:
+                        logger.debug(f"Processing document {doc_idx}")
                     self._process_document(doc, doc_idx, result, results_data, file_path)
             
         except (ParserError, ScannerError) as e:
