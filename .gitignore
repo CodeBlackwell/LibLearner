@@ -156,8 +156,9 @@ cython_debug/
 
 output
 liblearner/resources/*
+liblearner/resources/**/*
 !liblearner/resources/.gitkeep
-!liblearner/resources/notebooks/
+!liblearner/resources/notebooks/*
 resources/**/**
 **/node_modules
 **/extracted**
