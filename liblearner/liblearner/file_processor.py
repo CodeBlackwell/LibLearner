@@ -10,11 +10,17 @@ from typing import Optional, Dict, Type, List, Union
 from abc import ABC, abstractmethod
 import sys
 import logging
+import time
+import psutil
 from pathlib import Path
 from collections import defaultdict
 import pandas as pd
 from tqdm import tqdm
 from .processing_result import ProcessingResult
+import glob
+import numpy as np
+import shutil
+import gc
 
 # Default directories to ignore
 DEFAULT_IGNORE_DIRS = {"venv", ".git", "ds_venv", "dw_env", "__pycache__", ".venv", "*.egg-info", ".github", "node_modules", "*tests*"}
@@ -23,44 +29,72 @@ DEFAULT_IGNORE_DIRS = {"venv", ".git", "ds_venv", "dw_env", "__pycache__", ".ven
 logger = logging.getLogger('liblearner')
 logger.setLevel(logging.WARNING)
 
+def get_memory_usage():
+    """Get current memory usage of the process."""
+    process = psutil.Process(os.getpid())
+    return process.memory_info().rss / 1024 / 1024  # Convert to MB
+
+def log_system_info(logger):
+    """Log system information."""
+    process = psutil.Process(os.getpid())
+    logger.info(f"System Info:")
+    logger.info(f"  CPU Count: {psutil.cpu_count()}")
+    logger.info(f"  Available Memory: {psutil.virtual_memory().available / 1024 / 1024:.2f} MB")
+    logger.info(f"  Process Memory: {process.memory_info().rss / 1024 / 1024:.2f} MB")
+    logger.info(f"  Process CPU Usage: {process.cpu_percent()}%")
+
 class FileProcessor(ABC):
     """Base class for file processors."""
     
     def __init__(self):
-        """Initialize the processor with an empty dataframe."""
-        self.results_df = pd.DataFrame()
+        """Initialize the processor."""
+        self._output_dir = None
+        self._logger = logging.getLogger(self.__class__.__name__)
     
     @abstractmethod
     def get_supported_types(self) -> List[str]:
-        """
-        Returns the MIME types this processor can handle.
-        
-        Returns:
-            List of supported MIME types
-        """
+        """Return list of supported MIME types."""
         pass
     
     @abstractmethod
     def process_file(self, file_path: str) -> ProcessingResult:
-        """
-        Process a file and extract information.
-        
-        Args:
-            file_path: Path to the file to process
-            
-        Returns:
-            ProcessingResult containing extracted information
-        """
+        """Process a single file and return results."""
         pass
-
-    def get_results_dataframe(self) -> pd.DataFrame:
-        """
-        Get the results dataframe for this processor.
-        
-        Returns:
-            pandas DataFrame containing the processing results
-        """
-        return self.results_df
+    
+    def set_output_dir(self, output_dir: str) -> None:
+        """Set the output directory for individual file results."""
+        self._output_dir = output_dir
+        os.makedirs(output_dir, exist_ok=True)
+    
+    def write_results(self, df: pd.DataFrame, file_path: str) -> None:
+        """Write results DataFrame to a CSV file."""
+        if not self._output_dir:
+            raise ValueError("Output directory not set. Call set_output_dir() first.")
+            
+        if df is not None and not df.empty:
+            # Create a subdirectory structure mirroring the source
+            rel_path = os.path.relpath(file_path, start=os.path.commonpath([file_path, self._output_dir]))
+            result_dir = os.path.join(self._output_dir, os.path.dirname(rel_path))
+            os.makedirs(result_dir, exist_ok=True)
+            
+            # Replace extension with .csv
+            base_name = os.path.splitext(os.path.basename(file_path))[0]
+            result_path = os.path.join(result_dir, f"{base_name}_results.csv")
+            
+            # Write results
+            df.to_csv(result_path, index=False)
+            self._logger.info(f"Written results to {result_path}")
+            
+            # Force cleanup
+            del df
+            gc.collect()
+    
+    def clear_results(self):
+        """Clear any stored results to free memory."""
+        if hasattr(self, '_results'):
+            self._results = pd.DataFrame()
+        if hasattr(self, '_data'):
+            self._data = None
 
 class FileTypeDetector:
     """Handles file type detection using multiple methods."""
@@ -155,13 +189,38 @@ class ProcessorRegistry:
         self._results_dir = None  # Directory to store intermediate results
         self._processed_files = set()  # Track processed files by absolute path
         self._log_file = None
-        self._chunk_size = 20  # Default chunk size
+        self._chunk_size = 100  # Default chunk size
         self._current_chunk = defaultdict(list)  # Current chunk of results
         self._chunk_counter = 0
         self._progress_bar = None
         self._total_files = 0
         self._processed_count = 0
-
+        self._start_time = time.time()
+        self._last_chunk_time = self._start_time
+        
+        # Set up detailed logging
+        self._logger = logging.getLogger('liblearner.processor_registry')
+        self._logger.setLevel(logging.INFO)
+        
+        # Log initial system state
+        log_system_info(self._logger)
+    
+    def _log_processing_stats(self):
+        """Log current processing statistics."""
+        current_time = time.time()
+        elapsed = current_time - self._start_time
+        last_chunk_elapsed = current_time - self._last_chunk_time
+        
+        self._logger.info(f"\nProcessing Statistics:")
+        self._logger.info(f"  Total Time: {elapsed:.2f}s")
+        self._logger.info(f"  Files Processed: {self._processed_count}")
+        self._logger.info(f"  Processing Rate: {self._processed_count / elapsed:.2f} files/s")
+        self._logger.info(f"  Current Memory Usage: {get_memory_usage():.2f} MB")
+        self._logger.info(f"  Chunks Written: {self._chunk_counter}")
+        if self._chunk_counter > 0:
+            self._logger.info(f"  Time Since Last Chunk: {last_chunk_elapsed:.2f}s")
+        self._logger.info(f"  Current Chunk Size: {len(self._current_chunk)}")
+    
     def set_verbose(self, verbose: bool, log_file: Optional[str] = None) -> None:
         """Set verbose mode for debug output and optionally redirect to file.
         
@@ -225,18 +284,33 @@ class ProcessorRegistry:
         if not self._current_chunk:
             return
         
+        start_time = time.time()
         chunk_file = os.path.join(self._chunk_dir, f'chunk_{self._chunk_counter}.pkl')
         
-        # Write chunk to disk using pickle
-        import pickle
-        with open(chunk_file, 'wb') as f:
-            pickle.dump(dict(self._current_chunk), f)
-        
-        # Clear current chunk from memory
-        self._current_chunk.clear()
-        self._chunk_counter += 1
-        
-        self._debug(f"Wrote chunk {self._chunk_counter} to disk")
+        try:
+            self._logger.info(f"\nWriting chunk {self._chunk_counter}:")
+            self._logger.info(f"  Memory before write: {get_memory_usage():.2f} MB")
+            
+            # Write chunk to disk using pickle
+            import pickle
+            with open(chunk_file, 'wb') as f:
+                pickle.dump(dict(self._current_chunk), f)
+            
+            chunk_size = os.path.getsize(chunk_file) / 1024 / 1024  # MB
+            write_time = time.time() - start_time
+            
+            self._logger.info(f"  Chunk file size: {chunk_size:.2f} MB")
+            self._logger.info(f"  Write time: {write_time:.2f}s")
+            
+            # Clear current chunk from memory
+            self._current_chunk.clear()
+            self._chunk_counter += 1
+            
+            self._logger.info(f"  Memory after clear: {get_memory_usage():.2f} MB")
+            
+        except Exception as e:
+            self._logger.error(f"Error writing chunk {self._chunk_counter}: {str(e)}", exc_info=True)
+            raise
     
     def register_processor(self, processor: Union[Type[FileProcessor], FileProcessor]) -> None:
         """Register a processor for its supported MIME types.
@@ -329,40 +403,87 @@ class ProcessorRegistry:
     
     def process_file(self, file_path: str) -> Optional[Dict]:
         """Process a single file using appropriate processor."""
-        if not os.path.exists(file_path):
-            self._debug(f"File not found: {file_path}")
-            return None
+        start_time = time.time()
+        file_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
         
-        abs_path = os.path.abspath(file_path)
-        if abs_path in self._processed_files:
-            self._debug(f"Skipping already processed file: {file_path}")
-            return None
-        
-        processor = self.get_processor(file_path)
-        
-        if processor:
-            try:
-                result = processor.process_file(file_path)
-                if result and result.is_valid():
-                    # Add result to current chunk
-                    file_type = self._detector.detect_type(file_path)
-                    self._current_chunk[file_type].append({
-                        'filename': os.path.basename(file_path),
-                        'data': processor.get_results_dataframe()
-                    })
-                    
-                    # Write chunk if it reaches the size limit
-                    if len(self._current_chunk) >= self._chunk_size:
-                        self._write_chunk()
-                    
-                    # Mark file as processed
-                    self._processed_files.add(abs_path)
-                    
-                self._debug(f"Successfully processed {file_path}")
-                return result
-            except Exception as e:
-                self._debug(f"Error processing {file_path}: {str(e)}")
+        try:
+            if not os.path.exists(file_path):
+                self._logger.warning(f"File not found: {file_path}")
                 return None
+            
+            abs_path = os.path.abspath(file_path)
+            if abs_path in self._processed_files:
+                self._logger.debug(f"Skipping already processed file: {file_path}")
+                return None
+            
+            processor = self.get_processor(file_path)
+            
+            if processor:
+                try:
+                    self._logger.info(f"Processing file: {file_path}")
+                    self._logger.info(f"  Size: {file_size / 1024:.2f} KB")
+                    self._logger.info(f"  Processor: {type(processor).__name__}")
+                    
+                    result = processor.process_file(file_path)
+                    
+                    if result and result.is_valid():
+                        # Add result to current chunk
+                        file_type = self._detector.detect_type(file_path)
+                        
+                        # Clear processor results after getting what we need
+                        result_data = processor.get_results_dataframe()
+                        processor.clear_results()  # Add this method to base FileProcessor class
+                        
+                        self._current_chunk[file_type].append({
+                            'filename': os.path.basename(file_path),
+                            'data': result_data
+                        })
+                        
+                        # Force garbage collection after processing large files
+                        if file_size > 1024 * 1024:  # 1MB
+                            import gc
+                            gc.collect()
+                        
+                        # Write chunk if it reaches the size limit
+                        if len(self._current_chunk) >= self._chunk_size:
+                            mem_before = get_memory_usage()
+                            self._write_chunk()
+                            
+                            # Force garbage collection after writing chunk
+                            gc.collect()
+                            
+                            mem_after = get_memory_usage()
+                            self._logger.info(f"  Memory before chunk write: {mem_before:.2f} MB")
+                            self._logger.info(f"  Memory after chunk write: {mem_after:.2f} MB")
+                            self._last_chunk_time = time.time()
+                        
+                        # Mark file as processed
+                        self._processed_files.add(abs_path)
+                        
+                    process_time = time.time() - start_time
+                    self._logger.info(f"  Processing time: {process_time:.2f}s")
+                    self._logger.info(f"  Memory usage: {get_memory_usage():.2f} MB")
+                    
+                    # Log processing stats every 100 files
+                    if self._processed_count % 100 == 0:
+                        self._log_processing_stats()
+                    
+                    return result
+                    
+                except Exception as e:
+                    self._logger.error(f"Error processing {file_path}: {str(e)}", exc_info=True)
+                    return None
+                finally:
+                    # Ensure processor is cleared even if an error occurs
+                    if processor:
+                        processor.clear_results()
+        except Exception as e:
+            self._logger.error(f"Unexpected error processing {file_path}: {str(e)}", exc_info=True)
+            return None
+        finally:
+            # Force garbage collection for large files
+            if file_size > 1024 * 1024:
+                gc.collect()
         return None
 
     def _count_files(self, directory_path: str, ignore_dirs: Optional[List[str]] = None) -> int:
@@ -431,7 +552,7 @@ class ProcessorRegistry:
                         else:
                             unprocessed_files.append(file_path)
                     except Exception as e:
-                        self._debug(f"Error processing {file_path}: {str(e)}")
+                        self._logger.error(f"Error processing {file_path}: {str(e)}", exc_info=True)
                         unprocessed_files.append(file_path)
                     
                     # Update progress
@@ -451,84 +572,107 @@ class ProcessorRegistry:
                 self._progress_bar = None
 
     def write_results_to_csv(self, output_dir: str, combined: bool = True) -> None:
-        """Write all results to CSV files, combining chunks."""
-        os.makedirs(output_dir, exist_ok=True)
+        """Write all results to CSV files.
         
-        # Write final chunk if any
-        if self._current_chunk:
-            self._write_chunk()
-        
-        # Process chunks and write results
-        all_dfs = defaultdict(list)
-        import pickle
-        
-        # Create progress bar for chunk processing
-        chunk_progress = tqdm(
-            total=self._chunk_counter,
-            desc="Processing chunks",
-            unit="chunk",
-            position=0,
-            leave=True
-        )
+        Args:
+            output_dir: Directory to write CSV files to
+            combined: If True, write all results to a single CSV file
+        """
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+            
+        # Create progress bar for chunks
+        chunk_files = sorted(glob.glob(os.path.join(self._chunk_dir, 'chunk_*.pkl')))
+        chunk_progress = tqdm(total=len(chunk_files), desc="Processing chunks", leave=True)
         
         try:
-            # Process each chunk file
-            for i in range(self._chunk_counter):
-                chunk_file = os.path.join(self._chunk_dir, f'chunk_{i}.pkl')
+            # Process chunks one at a time to minimize memory usage
+            all_dfs = defaultdict(list)
+            current_chunk_size = 0
+            max_chunk_size = 1000  # Maximum number of DataFrames to hold in memory
+            
+            for i, chunk_file in enumerate(chunk_files):
                 try:
+                    # Load and process chunk
                     with open(chunk_file, 'rb') as f:
                         chunk_data = pickle.load(f)
                     
+                    mem_before = get_memory_usage()
+                    self._logger.info(f"\nProcessing chunk {i}:")
+                    self._logger.info(f"  Memory before: {mem_before:.2f} MB")
+                    
                     # Process each file type in the chunk
                     for file_type, results in chunk_data.items():
-                        for result in results:
-                            df = result['data']
-                            if not df.empty:
-                                df = df.copy()
-                                df['filename'] = result['filename']
-                                if combined:
-                                    df['file_type'] = file_type
-                                all_dfs[file_type].append(df)
+                        if results:
+                            dfs = [r['data'] for r in results if isinstance(r.get('data'), pd.DataFrame)]
+                            if dfs:
+                                all_dfs[file_type].extend(dfs)
+                                current_chunk_size += len(dfs)
+                    
+                    # Write intermediate results if we've accumulated enough
+                    if current_chunk_size >= max_chunk_size:
+                        self._write_intermediate_results(all_dfs, output_dir, combined)
+                        all_dfs = defaultdict(list)
+                        current_chunk_size = 0
+                        gc.collect()
+                    
+                    mem_after = get_memory_usage()
+                    self._logger.info(f"  Memory after: {mem_after:.2f} MB")
                     
                     # Remove processed chunk file
                     os.remove(chunk_file)
                     chunk_progress.update(1)
                 except Exception as e:
-                    self._debug(f"Error processing chunk {i}: {str(e)}")
+                    self._logger.error(f"Error processing chunk {i}: {str(e)}", exc_info=True)
             
-            # Write final results with a new progress bar
-            if combined:
-                combined_dfs = []
-                for file_type, dfs in all_dfs.items():
-                    if dfs:
-                        combined_dfs.extend(dfs)
-                
-                if combined_dfs:
-                    with tqdm(desc="Writing combined results", total=1, leave=True) as pbar:
-                        combined_df = pd.concat(combined_dfs, ignore_index=True)
-                        output_path = os.path.join(output_dir, 'combined_results.csv')
-                        combined_df.to_csv(output_path, index=False)
-                        pbar.update(1)
-                        self._debug(f"Written combined results to {output_path}")
-            else:
-                with tqdm(desc="Writing type-specific results", total=len(all_dfs), leave=True) as pbar:
-                    for file_type, dfs in all_dfs.items():
-                        if dfs:
-                            file_type_df = pd.concat(dfs, ignore_index=True)
-                            safe_name = file_type.replace('/', '_').replace('+', '_')
-                            output_path = os.path.join(output_dir, f'{safe_name}_results.csv')
-                            file_type_df.to_csv(output_path, index=False)
-                            pbar.update(1)
-                            self._debug(f"Written {file_type} results to {output_path}")
+            # Write any remaining results
+            if current_chunk_size > 0:
+                self._write_intermediate_results(all_dfs, output_dir, combined)
+            
         finally:
             chunk_progress.close()
             
             # Clean up chunk directory
             try:
-                import shutil
-                shutil.rmtree(self._chunk_dir)
+                if os.path.exists(self._chunk_dir):
+                    shutil.rmtree(self._chunk_dir)
             except Exception as e:
-                self._debug(f"Error cleaning up chunk directory: {str(e)}")
+                self._logger.error(f"Error cleaning up chunk directory: {str(e)}", exc_info=True)
+    
+    def _write_intermediate_results(self, all_dfs: Dict[str, List[pd.DataFrame]], output_dir: str, combined: bool) -> None:
+        """Write intermediate results to CSV files."""
+        if combined:
+            # Combine all DataFrames
+            combined_dfs = []
+            for file_type, dfs in all_dfs.items():
+                if dfs:
+                    combined_dfs.extend(dfs)
+            
+            if combined_dfs:
+                with tqdm(desc="Writing combined results", total=1, leave=True) as pbar:
+                    combined_df = pd.concat(combined_dfs, ignore_index=True)
+                    output_path = os.path.join(output_dir, 'combined_results.csv')
+                    # Use chunks to write large DataFrames
+                    for chunk_i, chunk_df in enumerate(np.array_split(combined_df, max(1, len(combined_df) // 10000))):
+                        mode = 'w' if chunk_i == 0 else 'a'
+                        header = chunk_i == 0
+                        chunk_df.to_csv(output_path, mode=mode, header=header, index=False)
+                    pbar.update(1)
+                    self._logger.info(f"Written combined results to {output_path}")
+        else:
+            with tqdm(desc="Writing type-specific results", total=len(all_dfs), leave=True) as pbar:
+                for file_type, dfs in all_dfs.items():
+                    if dfs:
+                        file_type_df = pd.concat(dfs, ignore_index=True)
+                        safe_name = "".join(c if c.isalnum() else "_" for c in file_type)
+                        output_path = os.path.join(output_dir, f'{safe_name}_results.csv')
+                        # Use chunks to write large DataFrames
+                        for chunk_i, chunk_df in enumerate(np.array_split(file_type_df, max(1, len(file_type_df) // 10000))):
+                            mode = 'w' if chunk_i == 0 else 'a'
+                            header = chunk_i == 0
+                            chunk_df.to_csv(output_path, mode=mode, header=header, index=False)
+                        pbar.update(1)
+                        self._logger.info(f"Written {file_type} results to {output_path}")
 
 # Global registry instance
 registry = ProcessorRegistry()

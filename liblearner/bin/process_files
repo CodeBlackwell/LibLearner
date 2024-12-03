@@ -307,12 +307,13 @@ def process_path(input_path, args):
     
     # Register available processors
     registry.register_processor(PythonProcessor())
-    registry.register_processor(ShellProcessor())
-    registry.register_processor(JupyterProcessor())
-    registry.register_processor(YAMLProcessor())
-    registry.register_processor(MarkdownProcessor())
-    registry.register_processor(JavaScriptProcessor())
-    registry.register_processor(JSONProcessor())
+    # Re Architecting Processors 
+    # registry.register_processor(ShellProcessor())
+    # registry.register_processor(JupyterProcessor())
+    # registry.register_processor(YAMLProcessor())
+    # registry.register_processor(MarkdownProcessor())
+    # registry.register_processor(JavaScriptProcessor())
+    # registry.register_processor(JSONProcessor())
     
     # Process input path
     if os.path.isdir(input_path):

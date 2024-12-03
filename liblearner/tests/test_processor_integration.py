@@ -234,54 +234,6 @@ This is a README file for the subdirectory.
 
         # Validate no errors occurred
         self.assertFalse(js_result.errors, f"JavaScript processing encountered errors: {js_result.errors}")
-        
-    # def test_csv_output(self):
-    #     """Test CSV output generation"""
-    #     # Process directory
-    #     registry.process_directory(self.test_dir)
-        
-    #     # Write results to CSV
-    #     registry.write_results_to_csv(self.output_dir)
-        
-    #     # Check combined results file
-    #     results_file = os.path.join(self.output_dir, 'all_results.csv')
-    #     self.assertTrue(os.path.exists(results_file))
-        
-    #     # Read and verify CSV content
-    #     df = pd.read_csv(results_file)
-        
-    #     # Verify required columns
-    #     required_columns = ['file_type', 'filename', 'type', 'name', 'content', 'props']
-    #     for col in required_columns:
-    #         self.assertIn(col, df.columns)
-            
-    #     # Verify different file types are present
-    #     file_types = df['file_type'].unique()
-    #     self.assertTrue(len(file_types) >= 3)  # At least Python, YAML, and Markdown
-        
-    #     # Verify content from different files
-    #     self.assertTrue(any(df['content'].str.contains('test_function', na=False)))
-    #     self.assertTrue(any(df['content'].str.contains('nginx:latest', na=False)))
-    #     self.assertTrue(any(df['content'].str.contains('Test Header', na=False)))
-        
-    # def test_separate_csv_output(self):
-    #     """Test separate CSV output files for each type"""
-    #     # Process directory
-    #     registry.process_directory(self.test_dir)
-        
-    #     # Write separate CSV files
-    #     registry.write_results_to_csv(self.output_dir, combined=False)
-        
-    #     # Check for type-specific CSV files
-    #     csv_files = list(Path(self.output_dir).glob('*_results.csv'))
-    #     self.assertTrue(len(csv_files) >= 3)  # At least Python, YAML, and Markdown
-        
-    #     # Verify content of each file
-    #     for csv_file in csv_files:
-    #         df = pd.read_csv(csv_file)
-    #         self.assertIn('filename', df.columns)
-    #         self.assertIn('type', df.columns)
-    #         self.assertIn('content', df.columns)
             
     def test_dataframe_csv_output(self):
         """Test that processor DataFrames are correctly written to CSV files."""

@@ -30,16 +30,17 @@ logger = logging.getLogger(__name__)
 class YAMLProcessor(FileProcessor):
     """Processor for YAML files."""
     
-    def __init__(self, debug: bool = False):
+    def __init__(self, debug: bool = False, output_dir: str = None):
         """Initialize the YAML processor."""
         super().__init__()
         self.debug = debug
+        self._output_dir = output_dir
         if self.debug:
             logger.setLevel(logging.DEBUG)
         else:
             logger.setLevel(logging.WARNING)
             
-        # Initialize results DataFrame
+        # Initialize results DataFrame - keep this for compatibility
         self.results_df = pd.DataFrame()
             
         # Define supported MIME types
@@ -133,11 +134,13 @@ class YAMLProcessor(FileProcessor):
                               'content', 'props', 'processor_type']
                 df = df[column_order]
                 
-                # Concatenate with existing results
-                if not self.results_df.empty:
-                    self.results_df = pd.concat([self.results_df, df], ignore_index=True)
-                else:
-                    self.results_df = df
+                # Write results to file immediately
+                if self._output_dir:
+                    self.write_results(df, file_path)
+                
+                # Clear any stored results to prevent memory leaks
+                self.results_df = pd.DataFrame()
+                
             except Exception as e:
                 error_msg = f"Error creating DataFrame: {str(e)}"
                 result.errors.append(error_msg)
@@ -289,3 +292,10 @@ class YAMLProcessor(FileProcessor):
             for item in data:
                 urls.update(self._extract_urls(item))
         return urls
+
+    def write_results(self, df: pd.DataFrame, file_path: str) -> None:
+        """Write results to a CSV file."""
+        output_file = os.path.join(self._output_dir, os.path.basename(file_path) + '.csv')
+        df.to_csv(output_file, index=False)
+        if self.debug:
+            logger.info(f"Wrote results to file: {output_file}")
