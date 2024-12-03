@@ -221,6 +221,12 @@ def parse_arguments():
         help="Show detailed processing information"
     )
     parser.add_argument(
+        "-vo", "--verbose-output",
+        nargs="?",
+        const="default",  # Used when -vo is specified without a value
+        help="Write verbose output to log file (default: ./logs/process_TIMESTAMP.log)"
+    )
+    parser.add_argument(
         "--temp-dir",
         help="Directory to store downloaded repositories (default: ./resources)",
         default="./resources"
@@ -278,7 +284,25 @@ def process_path(input_path, args):
     os.makedirs(output_dir, exist_ok=True)
     
     # Register available processors and set verbose mode
-    registry.set_verbose(args.verbose)
+    if args.verbose_output is not None:
+        # Generate default log path if needed
+        if args.verbose_output == "default":
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            log_dir = os.path.join(output_dir, "logs")
+            args.verbose_output = os.path.join(log_dir, f"process_{timestamp}.log")
+        
+        # Create log directory if needed
+        log_dir = os.path.dirname(args.verbose_output)
+        if log_dir:
+            os.makedirs(log_dir, exist_ok=True)
+        
+        registry.set_verbose(True, args.verbose_output)
+        print(f"Verbose output will be written to: {args.verbose_output}")
+    else:
+        registry.set_verbose(args.verbose)
+    
+    # Register processors
     registry.register_processor(PythonProcessor())
     registry.register_processor(ShellProcessor())
     registry.register_processor(JupyterProcessor())

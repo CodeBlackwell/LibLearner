@@ -9,6 +9,7 @@ import magic  # python-magic library for robust file type detection
 from typing import Optional, Dict, Type, List, Union
 from abc import ABC, abstractmethod
 import sys
+import logging
 from pathlib import Path
 from collections import defaultdict
 import pandas as pd
@@ -16,6 +17,10 @@ from .processing_result import ProcessingResult
 
 # Default directories to ignore
 DEFAULT_IGNORE_DIRS = {"venv", ".git", "ds_venv", "dw_env", "__pycache__", ".venv", "*.egg-info", ".github", "node_modules", "*tests*"}
+
+# Set up root logger
+logger = logging.getLogger('liblearner')
+logger.setLevel(logging.WARNING)
 
 class FileProcessor(ABC):
     """Base class for file processors."""
@@ -148,15 +153,47 @@ class ProcessorRegistry:
         self._verbose = False
         self._results = defaultdict(lambda: defaultdict(pd.DataFrame))
         self._processed_files = set()  # Track processed files by absolute path
+        self._log_file = None
     
-    def set_verbose(self, verbose: bool) -> None:
-        """Set verbose mode for debug output."""
+    def set_verbose(self, verbose: bool, log_file: Optional[str] = None) -> None:
+        """Set verbose mode for debug output and optionally redirect to file.
+        
+        Args:
+            verbose: Whether to enable verbose output
+            log_file: Optional file path to write verbose output to
+        """
         self._verbose = verbose
+        self._log_file = log_file
+        
+        # Configure logging
+        logger = logging.getLogger('liblearner')
+        logger.setLevel(logging.DEBUG if verbose else logging.WARNING)
+        
+        # Remove existing handlers
+        for handler in logger.handlers[:]:
+            logger.removeHandler(handler)
+        
+        # Set up new handler based on configuration
+        if verbose:
+            if log_file:
+                handler = logging.FileHandler(log_file, mode='w')
+                formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            else:
+                handler = logging.StreamHandler(sys.stderr)
+                formatter = logging.Formatter('%(levelname)s: %(message)s')
+            
+            handler.setFormatter(formatter)
+            logger.addHandler(handler)
+        
+        # Update debug mode for all registered processors
+        for processor in self._unique_processors:
+            if hasattr(processor, 'debug'):
+                processor.debug = verbose
     
     def _debug(self, message: str) -> None:
-        """Print debug message if verbose mode is enabled."""
+        """Log debug message if verbose mode is enabled."""
         if self._verbose:
-            print(f"DEBUG: {message}", file=sys.stderr)
+            logger.debug(message)
     
     def register_processor(self, processor: Union[Type[FileProcessor], FileProcessor]) -> None:
         """Register a processor for its supported MIME types.
@@ -166,6 +203,10 @@ class ProcessorRegistry:
         """
         if isinstance(processor, type):
             processor = processor()
+        
+        # Set debug mode based on registry's verbose setting
+        if hasattr(processor, 'debug'):
+            processor.debug = self._verbose
         
         # Add to unique processors set
         self._unique_processors.add(processor)

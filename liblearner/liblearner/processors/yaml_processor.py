@@ -24,9 +24,8 @@ from yaml.scanner import ScannerError
 from ..file_processor import FileProcessor
 from ..processing_result import YAMLProcessingResult
 
-# Set up logging with a higher default level
+# Set up logger
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)  # Default to WARNING level
 
 class YAMLProcessor(FileProcessor):
     """Processor for YAML files."""
