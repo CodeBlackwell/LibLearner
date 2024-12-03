@@ -7,6 +7,7 @@ import { dirname } from 'path';
 import cliProgress from 'cli-progress';
 import chalk from 'chalk';
 import os from 'os';
+import * as tar from 'tar';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -17,6 +18,12 @@ const CONFIG = {
   verbose: true,
   systemDownloads: path.join(os.homedir(), 'Downloads')
 };
+
+// Create resources directory if it doesn't exist
+const resourcesDir = path.join(__dirname, '..', 'resources');
+if (!fs.existsSync(resourcesDir)) {
+  fs.mkdirSync(resourcesDir, { recursive: true });
+}
 
 const notebookSlugs = [
     '@d3/animated-treemap',
@@ -196,111 +203,154 @@ const notebookSlugs = [
 
 // Function to wait for download in system Downloads folder
 const waitForDownload = (timeout = 10000) => {
-  return new Promise((resolve, reject) => {
-    const startTime = Date.now();
-    const initialFiles = new Set(fs.readdirSync(CONFIG.systemDownloads));
-    
-    const checkDownload = () => {
-      const currentFiles = new Set(fs.readdirSync(CONFIG.systemDownloads));
-      const newFiles = [...currentFiles].filter(file => !initialFiles.has(file));
+    return new Promise((resolve, reject) => {
+      const startTime = Date.now();
+      const initialFiles = new Set(fs.readdirSync(CONFIG.systemDownloads));
       
-      // Look for new .tgz files
-      const newDownloads = newFiles.filter(file => file.endsWith('.tgz'));
+      const checkDownload = () => {
+        const currentFiles = new Set(fs.readdirSync(CONFIG.systemDownloads));
+        const newFiles = [...currentFiles].filter(file => !initialFiles.has(file));
+        
+        // Look for new .tgz files
+        const newDownloads = newFiles.filter(file => file.endsWith('.tgz'));
+        
+        if (newDownloads.length > 0) {
+          resolve(newDownloads[0]); // Return the first new .tgz file
+        } else if (Date.now() - startTime > timeout) {
+          reject(new Error('Download timeout'));
+        } else {
+          setTimeout(checkDownload, 100);
+        }
+      };
       
-      if (newDownloads.length > 0) {
-        resolve(newDownloads[0]); // Return the first new .tgz file
-      } else if (Date.now() - startTime > timeout) {
-        reject(new Error('Download timeout'));
-      } else {
-        setTimeout(checkDownload, 100);
-      }
-    };
+      checkDownload();
+    });
+  };
+  
+  // Function to move downloaded file to target directory
+  const moveDownloadedFile = (sourcePath, targetDir) => {
+    const fileName = path.basename(sourcePath);
+    const targetPath = path.join(targetDir, fileName);
     
-    checkDownload();
-  });
-};
+    fs.renameSync(sourcePath, targetPath);
+    return targetPath;
+  };
 
-// Function to move file from Downloads to our directory
-const moveDownloadedFile = (filename, targetDir) => {
-  const sourcePath = path.join(CONFIG.systemDownloads, filename);
-  const targetPath = path.join(targetDir, filename);
-  
-  fs.renameSync(sourcePath, targetPath);
-  return targetPath;
-};
-
-(async () => {
-  console.log(chalk.blue('🚀 Starting ObservableHQ notebook downloader...'));
-  
-  const multibar = new cliProgress.MultiBar({
-    clearOnComplete: false,
-    hideCursor: true,
-    format: '{bar} {percentage}% | {value}/{total} | {status}'
-  }, cliProgress.Presets.shades_classic);
-
-  const mainBar = multibar.create(notebookSlugs.length, 0, { status: 'Notebooks processed' });
-  
-  const browser = await puppeteer.launch({
-    headless: false,
-    defaultViewport: null
-  });
-  const page = await browser.newPage();
-  
-  const downloadPath = path.join(__dirname, 'observable_downloads');
-  fs.mkdirSync(downloadPath, { recursive: true });
-  
-  console.log(chalk.yellow(`📁 Target directory: ${downloadPath}`));
-  console.log(chalk.yellow(`🔍 Monitoring downloads in: ${CONFIG.systemDownloads}`));
-
-  for (let [index, slug] of notebookSlugs.entries()) {
+  // Function to extract .tgz file
+  const extractTgz = async (tgzPath, extractDir) => {
+    const notebookName = path.basename(tgzPath, '.tgz');
+    const targetDir = path.join(extractDir, notebookName);
+    
+    // Create target directory
+    fs.mkdirSync(targetDir, { recursive: true });
+    
     try {
-      if (index > 0) {
-        await new Promise(resolve => setTimeout(resolve, CONFIG.requestDelay));
-      }
+      console.log(chalk.yellow(`📦 Extracting ${notebookName}...`));
       
-      const url = `${CONFIG.baseUrl}${slug}`;
-      if (CONFIG.verbose) console.log(chalk.blue(`\n📥 Processing notebook: ${slug}`));
-      
-      await page.goto(url, { waitUntil: 'networkidle2' });
-      const notebookTitle = await page.title();
-      
-      // Click the "..." menu button
-      await page.waitForSelector('button[aria-haspopup="true"][class*="action-button"]');
-      await page.click('button[aria-haspopup="true"][class*="action-button"]');
-      
-      // Wait for and click the Export option
-      await page.waitForSelector('[role="menuitem"][data-valuetext="Export"]');
-      await page.click('[role="menuitem"][data-valuetext="Export"]');
-      
-      // Wait a moment for submenu
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Now look for and click the download option in the submenu
-      await page.evaluate(() => {
-        const menuItems = Array.from(document.querySelectorAll('[role="menuitem"]'));
-        const downloadItem = menuItems.find(item => 
-          item.textContent.includes('Download zip') || 
-          item.textContent.includes('Download')
-        );
-        if (downloadItem) downloadItem.click();
+      // Extract the .tgz file
+      await tar.x({
+        file: tgzPath,
+        cwd: targetDir,
+        strip: 1
       });
       
-      console.log(chalk.yellow('⏳ Waiting for download to complete...'));
-      const downloadedFile = await waitForDownload();
+      // Clean up the .tgz file
+      fs.unlinkSync(tgzPath);
+      console.log(chalk.green(`🗑️  Cleaned up ${path.basename(tgzPath)}`));
       
-      // Move the file to our target directory
-      const finalPath = moveDownloadedFile(downloadedFile, downloadPath);
-      
-      console.log(chalk.green(`✅ Successfully downloaded: ${notebookTitle}`));
-      console.log(chalk.blue(`📦 Saved to: ${finalPath}`));
-      mainBar.increment();
+      return targetDir;
     } catch (error) {
-      console.error(chalk.red(`❌ Failed to download ${slug}:`), error);
-      mainBar.increment({ status: 'Error occurred' });
+      throw error;
     }
-  }
+  };
 
-  multibar.stop();
-  console.log(chalk.green('\n🎉 Downloads completed!'));
-  await browser.close();
-})();
+  (async () => {
+    console.log(chalk.blue('🚀 Starting ObservableHQ notebook downloader...'));
+    
+    const multibar = new cliProgress.MultiBar({
+      clearOnComplete: false,
+      hideCursor: true,
+      format: '{bar} {percentage}% | {value}/{total} | {status}'
+    }, cliProgress.Presets.shades_classic);
+  
+    const mainBar = multibar.create(notebookSlugs.length, 0, { status: 'Notebooks processed' });
+    
+    const browser = await puppeteer.launch({
+      headless: false,
+      defaultViewport: null
+    });
+    
+    // Create download directory
+    const downloadPath = path.join(resourcesDir, 'notebooks');
+    fs.mkdirSync(downloadPath, { recursive: true });
+    
+    console.log(chalk.yellow(`📁 Target directory: ${downloadPath}`));
+    console.log(chalk.yellow(`🔍 Monitoring downloads in: ${CONFIG.systemDownloads}`));
+  
+    for (let [index, slug] of notebookSlugs.entries()) {
+      try {
+        if (index > 0) {
+          await new Promise(resolve => setTimeout(resolve, CONFIG.requestDelay));
+        }
+        
+        const url = `${CONFIG.baseUrl}/${slug}`;
+        if (CONFIG.verbose) console.log(chalk.blue(`\n📥 Processing notebook: ${slug}`));
+        
+        const page = await browser.newPage();
+        await page.goto(url, { waitUntil: 'networkidle2' });
+        const notebookTitle = await page.title();
+        
+        // Click the "..." menu button
+        await page.waitForSelector('button[aria-haspopup="true"][class*="action-button"]');
+        await page.click('button[aria-haspopup="true"][class*="action-button"]');
+        
+        // Wait for and click the Export option
+        await page.waitForSelector('[role="menuitem"][data-valuetext="Export"]');
+        await page.click('[role="menuitem"][data-valuetext="Export"]');
+        
+        // Wait a moment for submenu
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Now look for and click the download option in the submenu
+        await page.evaluate(() => {
+          const menuItems = Array.from(document.querySelectorAll('[role="menuitem"]'));
+          const downloadItem = menuItems.find(item => 
+            item.textContent.includes('Download zip') || 
+            item.textContent.includes('Download')
+          );
+          if (downloadItem) downloadItem.click();
+        });
+        
+        console.log(chalk.yellow('⏳ Waiting for download to complete...'));
+        const downloadedFile = await waitForDownload();
+        
+        // Move the file to our target directory
+        const finalPath = moveDownloadedFile(path.join(CONFIG.systemDownloads, downloadedFile), downloadPath);
+        
+        console.log(chalk.green(`✅ Successfully downloaded: ${notebookTitle}`));
+        console.log(chalk.blue(`📦 Saved to: ${finalPath}`));
+
+        // Extract and cleanup
+        const extractedDir = await extractTgz(finalPath, downloadPath);
+        console.log(chalk.blue(`📂 Files extracted to: ${extractedDir}`));
+        
+        mainBar.increment();
+
+        // Close the tab after download completes
+        await page.close();
+      } catch (error) {
+        console.error(chalk.red(`❌ Failed to download ${slug}:`), error);
+        mainBar.increment({ status: 'Error occurred' });
+        // Make sure to close the tab even if there's an error
+        try {
+          await page.close();
+        } catch (e) {
+          // Ignore any errors from closing the page
+        }
+      }
+    }
+  
+    multibar.stop();
+    console.log(chalk.green('\n🎉 Downloads completed!'));
+    await browser.close();
+  })();
