@@ -12,6 +12,7 @@ from datetime import datetime
 from tqdm import tqdm
 import colorama
 from colorama import Fore, Style
+import time
 
 # Initialize colorama for cross-platform color support
 colorama.init()
@@ -50,69 +51,110 @@ def get_file_chunks(df: pd.DataFrame, limit: Optional[int] = None) -> Iterator[t
     else:
         yield from grouped
 
-def prepare_messages(filepath: str, chunk_df: pd.DataFrame, system_prompt: Optional[str] = None) -> List[Dict]:
-    """Prepare messages for OpenAI API from a single file's content."""
+def prepare_individual_conversation(filepath: str, row: Dict, system_prompt: Optional[str] = None) -> List[Dict]:
+    """
+    Prepare conversation context for a single row.
+    """
     messages = []
     
     # Add system prompt if provided
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
-    
-    # Combine all content from the same file
-    file_content = "\n\n".join(chunk_df['content'].astype(str))
-    
-    # Add file metadata
-    processor_types = chunk_df['processor_type'].unique()
-    metadata = {
-        'filepath': filepath,
-        'processor_types': processor_types.tolist(),
-        'num_entries': len(chunk_df)
-    }
-    
+
     message = {
         "role": "user",
-        "content": f"Analyzing file: {filepath}\nMetadata: {json.dumps(metadata, indent=2)}\n\nContent:\n{file_content}"
+        "content": f"Analyzing row from file: {filepath}\n\nContent:\n{row['content']}"
     }
     messages.append(message)
     
     return messages
 
-def call_openai_api(client: OpenAI, messages: List[Dict], model: str, temperature: float) -> str:
-    """Call OpenAI API with messages and return response."""
-    try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            temperature=temperature
-        )
-        # Extract the actual response text
-        return response.choices[0].message.content
-    except Exception as e:
-        print(f"Error calling OpenAI API: {str(e)}", file=sys.stderr)
-        sys.exit(1)
+def calculate_token_cost(input_tokens: int, output_tokens: int) -> float:
+    """
+    Calculate the cost based on input and output tokens.
+    """
+    input_cost = (input_tokens / 1_000_000) * 2.50
+    output_cost = (output_tokens / 1_000_000) * 10.00
+    return input_cost + output_cost
 
-def save_responses(responses: List[Dict], output_dir: str):
-    """Save responses to individual files and a combined file."""
-    try:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+def call_openai_with_retry(client: OpenAI, messages: List[Dict], model: str, temperature: float, retries: int = 3) -> Dict:
+    """
+    Call OpenAI API with retry logic to handle rate limit issues.
+    Returns the response and token usage information.
+    """
+    for attempt in range(retries):
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=temperature
+            )
+            return {
+                "content": response.choices[0].message.content,
+                "usage": {
+                    "prompt_tokens": response.usage.prompt_tokens,
+                    "completion_tokens": response.usage.completion_tokens
+                }
+            }
+        except Exception as e:
+            wait_time = 2 ** attempt
+            print(f"Attempt {attempt+1} failed: {str(e)}. Retrying in {wait_time} seconds...", file=sys.stderr)
+            time.sleep(wait_time)
+    print("All attempts failed. Exiting.", file=sys.stderr)
+    sys.exit(1)
+
+def call_openai_individual_rows(client: OpenAI, chunk_df: pd.DataFrame, model: str, temperature: float, system_prompt: Optional[str]) -> pd.DataFrame:
+    """
+    Conduct a conversation for each row individually and update the DataFrame with contextual information.
+    """
+    # Create an explicit copy of the DataFrame and reset the index
+    working_df = chunk_df.copy().reset_index(drop=True)
+    total_rows = len(working_df)
+    current_file = working_df['filepath'].iloc[0]
+    print(f"\nStarting individual row processing for {total_rows} rows from file: {current_file}")
+    
+    # Track token usage
+    total_input_tokens = 0
+    total_output_tokens = 0
+    
+    # Process each row individually
+    for index, row in working_df.iterrows():
+        messages = prepare_individual_conversation(current_file, row, system_prompt)
         
-        # Save individual responses
-        for response in responses:
-            filepath = response['filepath']
-            filename = f"{Path(filepath).stem}_{timestamp}.json"
-            output_path = Path(output_dir) / filename
-            
-            with open(output_path, 'w') as f:
-                json.dump(response, f, indent=2)
+        # Call OpenAI API with retry logic for each row
+        response = call_openai_with_retry(client, messages, model, temperature)
+        response_text = response["content"]
+        token_usage = response["usage"]
         
-        # Save combined responses
-        combined_path = Path(output_dir) / f"combined_responses_{timestamp}.json"
-        with open(combined_path, 'w') as f:
-            json.dump(responses, f, indent=2)
-            
-    except Exception as e:
-        print(f"Error saving responses: {str(e)}", file=sys.stderr)
-        sys.exit(1)
+        # Update token usage totals
+        total_input_tokens += token_usage["prompt_tokens"]
+        total_output_tokens += token_usage["completion_tokens"]
+        
+        # Calculate current cost
+        current_cost = calculate_token_cost(total_input_tokens, total_output_tokens)
+        
+        # Print token usage and cost in real-time
+        print(f"Processed row {index + 1}/{total_rows} from file: {current_file}")
+        print(f"Total input tokens used: {total_input_tokens}")
+        print(f"Total output tokens used: {total_output_tokens}")
+        print(f"Estimated cost so far: ${current_cost:.4f}")
+        
+        # Add the generated context to the row in the DataFrame
+        working_df.at[index, 'context'] = response_text
+    
+    print(f"\nFinished processing file: {current_file}")
+    return working_df
+
+def process_file_with_conversation(client: OpenAI, filepath: str, chunk_df: pd.DataFrame, args) -> pd.DataFrame:
+    """
+    Handle conversation flow for a single file and save the results.
+    """
+    print(f"\n{Fore.CYAN}📄 Starting conversation for file: {filepath}{Style.RESET_ALL}")
+    
+    # Conduct conversation for each row individually
+    updated_chunk_df = call_openai_individual_rows(client, chunk_df, args.model, args.temperature, args.system_prompt)
+    
+    return updated_chunk_df
 
 def get_default_output_dir(input_file: str) -> str:
     """Generate default output directory path based on input file name."""
@@ -129,6 +171,19 @@ def get_default_output_dir(input_file: str) -> str:
     output_dir = llm_output_dir / target_name
     
     return str(output_dir)
+
+def save_responses(df: pd.DataFrame, output_dir: str):
+    """Save responses to a CSV file."""
+    try:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # Save DataFrame with context column
+        output_path = Path(output_dir) / f"processed_with_context_{timestamp}.csv"
+        df.to_csv(output_path, index=False)
+        
+    except Exception as e:
+        print(f"Error saving responses: {str(e)}", file=sys.stderr)
+        sys.exit(1)
 
 def main():
     parser = argparse.ArgumentParser(
@@ -202,24 +257,14 @@ def main():
     try:
         # Process each file chunk with progress bar
         for filepath, chunk_df in tqdm(file_chunks, desc="Processing files", unit="file"):
-            print(f"\n{Fore.CYAN}📄 Processing: {filepath}{Style.RESET_ALL}")
-            messages = prepare_messages(filepath, chunk_df, args.system_prompt)
-            
-            # Call API and store response
-            response_text = call_openai_api(client, messages, args.model, args.temperature)
-            responses.append({
-                'filepath': filepath,
-                'response': response_text,
-                'metadata': {
-                    'model': args.model,
-                    'temperature': args.temperature,
-                    'processor_types': chunk_df['processor_type'].unique().tolist(),
-                    'num_entries': len(chunk_df)
-                }
-            })
+            updated_chunk_df = process_file_with_conversation(client, filepath, chunk_df, args)
+            responses.append(updated_chunk_df)
+        
+        # Concatenate all updated DataFrames
+        final_df = pd.concat(responses, ignore_index=True)
         
         # Save all responses
-        save_responses(responses, args.output_dir)
+        save_responses(final_df, args.output_dir)
         print(f"\n{Fore.GREEN}✅ Successfully processed all files!{Style.RESET_ALL}")
         print(f"{Fore.BLUE}📁 Responses saved to: {args.output_dir}{Style.RESET_ALL}")
         
@@ -227,13 +272,15 @@ def main():
         print(f"\n{Fore.YELLOW}⚠️  Processing interrupted by user{Style.RESET_ALL}")
         if responses:
             print(f"{Fore.BLUE}💾 Saving partial results...{Style.RESET_ALL}")
-            save_responses(responses, args.output_dir)
+            final_df = pd.concat(responses, ignore_index=True)
+            save_responses(final_df, args.output_dir)
             print(f"{Fore.GREEN}✅ Partial results saved to: {args.output_dir}{Style.RESET_ALL}")
     except Exception as e:
         print(f"\n{Fore.RED}❌ Error during processing: {str(e)}{Style.RESET_ALL}", file=sys.stderr)
         if responses:
             print(f"{Fore.BLUE}💾 Attempting to save partial results...{Style.RESET_ALL}")
-            save_responses(responses, args.output_dir)
+            final_df = pd.concat(responses, ignore_index=True)
+            save_responses(final_df, args.output_dir)
             print(f"{Fore.GREEN}✅ Partial results saved to: {args.output_dir}{Style.RESET_ALL}")
         sys.exit(1)
 
